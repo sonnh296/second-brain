@@ -1,0 +1,59 @@
+Trí Tuệ Nhân Tạo (AI) — Tổng Quan
+
+Trí tuệ nhân tạo (Artificial Intelligence - AI) là lĩnh vực khoa học máy tính tập trung vào việc tạo ra các hệ thống có khả năng thực hiện các nhiệm vụ thường đòi hỏi trí thông minh của con người.
+
+== Các loại AI ==
+
+1. AI hẹp (Narrow AI)
+AI hẹp là loại AI phổ biến nhất hiện nay. Nó được thiết kế để thực hiện một nhiệm vụ cụ thể, chẳng hạn như nhận dạng giọng nói, dịch ngôn ngữ, hoặc chơi cờ vua. Ví dụ: Google Translate, Siri, AlphaGo.
+
+2. AI tổng quát (General AI)
+AI tổng quát là loại AI có khả năng thực hiện bất kỳ nhiệm vụ trí tuệ nào mà con người có thể làm. Đây vẫn còn là mục tiêu nghiên cứu, chưa đạt được trong thực tế.
+
+3. Siêu AI (Super AI)
+Siêu AI là loại AI vượt trội hơn con người về mọi mặt. Đây là khái niệm lý thuyết và còn rất xa trong tương lai.
+
+== Machine Learning ==
+
+Machine Learning (Học máy) là nhánh quan trọng nhất của AI hiện đại. Thay vì lập trình quy tắc cụ thể, machine learning cho phép máy tính học từ dữ liệu.
+
+Các thuật toán phổ biến:
+- Hồi quy tuyến tính (Linear Regression): dự đoán giá trị liên tục
+- Cây quyết định (Decision Tree): phân loại dữ liệu theo cấu trúc cây
+- Mạng nơ-ron (Neural Network): mô phỏng não người để học các pattern phức tạp
+- Random Forest: kết hợp nhiều cây quyết định để tăng độ chính xác
+
+== Deep Learning ==
+
+Deep Learning là tập con của Machine Learning, sử dụng mạng nơ-ron nhiều lớp (deep neural networks). Đây là công nghệ đằng sau các đột phá gần đây như:
+- Nhận dạng hình ảnh (Image Recognition)
+- Xử lý ngôn ngữ tự nhiên (NLP)
+- Tạo sinh văn bản và hình ảnh (Generative AI)
+
+== Large Language Models (LLM) ==
+
+LLM là các mô hình ngôn ngữ lớn được huấn luyện trên lượng dữ liệu văn bản khổng lồ. Chúng có khả năng hiểu và tạo ra văn bản tự nhiên.
+
+Các LLM nổi tiếng:
+- GPT-4 (OpenAI): mô hình đa năng, hỗ trợ text và hình ảnh
+- Claude (Anthropic): tập trung vào an toàn AI và khả năng lý luận
+- Gemini (Google): tích hợp đa phương tiện
+- LLaMA (Meta): mô hình mã nguồn mở
+
+== Ứng dụng thực tế ==
+
+AI đang được áp dụng rộng rãi trong nhiều lĩnh vực:
+- Y tế: chẩn đoán bệnh, phân tích hình ảnh y tế, phát triển thuốc
+- Tài chính: phát hiện gian lận, giao dịch tự động, đánh giá rủi ro
+- Giáo dục: cá nhân hóa học tập, gia sư AI, tự động chấm bài
+- Giao thông: xe tự lái, tối ưu hóa lộ trình, quản lý giao thông
+- Nông nghiệp: phát hiện sâu bệnh, tối ưu tưới tiêu, dự báo năng suất
+
+== Thách thức và rủi ro ==
+
+Mặc dù AI mang lại nhiều lợi ích, nhưng cũng đặt ra nhiều thách thức:
+- Đạo đức AI: đảm bảo AI không phân biệt đối xử hay thiên lệch
+- Quyền riêng tư: bảo vệ dữ liệu cá nhân được sử dụng để huấn luyện AI
+- Thất nghiệp: tự động hóa có thể thay thế một số công việc của con người
+- An toàn AI: ngăn chặn các hệ thống AI hoạt động ngoài tầm kiểm soát
+- Quyền sở hữu trí tuệ: nội dung do AI tạo ra thuộc về ai?

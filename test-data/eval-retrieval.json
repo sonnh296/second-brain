@@ -1,0 +1,26 @@
+{
+  "k": 5,
+  "cases": [
+    {
+      "question": "Việt Nam có bao nhiêu unicorn?",
+      "expected_filenames": ["vietnam-startup-ecosystem"],
+      "expected_terms": ["unicorn", "6 công ty"]
+    },
+    {
+      "question": "MoMo là gì?",
+      "expected_terms": ["MoMo", "ví điện tử"]
+    },
+    {
+      "question": "Trung tâm startup lớn nhất ở đâu?",
+      "expected_terms": ["TP. Hồ Chí Minh", "60%"]
+    },
+    {
+      "question": "ELSA Speak thuộc lĩnh vực nào?",
+      "expected_terms": ["ELSA Speak", "Edtech"]
+    },
+    {
+      "question": "Tổng vốn đầu tư startup Việt Nam 2023?",
+      "expected_terms": ["1,1 tỷ USD", "2023"]
+    }
+  ]
+}

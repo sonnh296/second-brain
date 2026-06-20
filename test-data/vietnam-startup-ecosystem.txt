@@ -1,0 +1,84 @@
+Hệ Sinh Thái Startup Việt Nam 2024-2025
+
+== Tổng Quan ==
+
+Việt Nam đang nổi lên như một trong những trung tâm startup năng động nhất Đông Nam Á. Với dân số 98 triệu người, tỷ lệ thâm nhập internet cao (73%), và lực lượng lao động trẻ am hiểu công nghệ, Việt Nam có nền tảng vững chắc để phát triển hệ sinh thái khởi nghiệp.
+
+== Số Liệu Quan Trọng ==
+
+- Số startup đang hoạt động: hơn 3.800 doanh nghiệp (2024)
+- Tổng vốn đầu tư: khoảng 1,1 tỷ USD (2023)
+- Số unicorn (định giá trên 1 tỷ USD): 6 công ty
+- Thứ hạng hệ sinh thái startup Đông Nam Á: Top 3
+
+== Các Unicorn Việt Nam ==
+
+1. VNG Corporation
+Lĩnh vực: Công nghệ, game, fintech
+Được thành lập năm 2004, VNG là unicorn đầu tiên của Việt Nam. Nổi tiếng với ứng dụng Zalo (100+ triệu người dùng) và game ZingPlay.
+
+2. VNPay
+Lĩnh vực: Fintech, thanh toán số
+VNPay là nền tảng thanh toán QR lớn nhất Việt Nam, xử lý hàng triệu giao dịch mỗi ngày. Được SoftBank và GIC đầu tư năm 2019.
+
+3. MoMo
+Lĩnh vực: Ví điện tử, fintech
+MoMo có hơn 31 triệu người dùng đăng ký. Đây là ví điện tử phổ biến nhất Việt Nam, cung cấp dịch vụ từ thanh toán đến vay tiêu dùng.
+
+4. Sky Mavis
+Lĩnh vực: Blockchain, gaming (GameFi)
+Nhà sáng tạo Axie Infinity — tựa game blockchain đầu tiên đạt 1 triệu người dùng hoạt động hàng ngày. Trụ sở tại TP.HCM.
+
+5. KiotViet
+Lĩnh vực: SaaS, quản lý bán lẻ
+Phần mềm quản lý bán hàng cho hơn 200.000 cửa hàng vừa và nhỏ trên khắp Việt Nam.
+
+6. Tiki
+Lĩnh vực: Thương mại điện tử
+Một trong những sàn thương mại điện tử lớn nhất Việt Nam, cạnh tranh trực tiếp với Shopee và Lazada.
+
+== Các Lĩnh Vực Nổi Bật ==
+
+Fintech:
+- Thanh toán số và ví điện tử đang bùng nổ
+- Cho vay ngang hàng (P2P lending) tăng trưởng mạnh
+- Các giải pháp ngân hàng số đang thách thức ngân hàng truyền thống
+
+Edtech:
+- ELSA Speak: ứng dụng luyện phát âm tiếng Anh với AI, có mặt tại 195 quốc gia
+- Topica: nền tảng giáo dục trực tuyến lớn nhất Đông Nam Á
+- Ivy-Prep: hỗ trợ du học sinh Việt Nam
+
+Healthtech:
+- eDoctor, Medpro: kết nối bệnh nhân với bác sĩ trực tuyến
+- Pharmacity: chuỗi nhà thuốc số hóa với 1.000+ chi nhánh
+
+Logistics & PropTech:
+- Giaohangnhanh (GHN): mạng lưới giao hàng phủ 63 tỉnh thành
+- PropertyGuru: nền tảng bất động sản trực tuyến
+
+== Trung Tâm Startup ==
+
+TP. Hồ Chí Minh:
+- Trung tâm khởi nghiệp lớn nhất, chiếm 60% startup cả nước
+- Khu công nghệ cao SHTP, Saigon Innovation Hub
+
+Hà Nội:
+- Nhiều startup fintech và deeptech
+- Kết nối chặt chẽ với các tập đoàn công nghệ lớn
+
+Đà Nẵng:
+- Đang nổi lên như Silicon Valley của miền Trung
+- Tập trung vào du lịch công nghệ và smart city
+
+== Thách Thức ==
+
+- Thiếu nhân tài cấp cao (CTO, CPO có kinh nghiệm)
+- Thị trường nội địa còn phân mảnh
+- Khung pháp lý cho fintech và blockchain chưa hoàn thiện
+- Khó tiếp cận vốn ở giai đoạn Series B trở lên
+- Cạnh tranh từ các startup Đông Nam Á có nhiều vốn hơn
+
+== Triển Vọng ==
+
+Dự báo đến 2030, Việt Nam sẽ có thêm 5-10 unicorn mới, chủ yếu trong các lĩnh vực AI, fintech, và logistics. Chính phủ đặt mục tiêu đến 2025 có ít nhất 1.000 startup đổi mới sáng tạo hoạt động hiệu quả.
