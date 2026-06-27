@@ -49,6 +49,17 @@ function validateOptionalConfig(): void {
     console.warn('[env] QDRANT_API_KEY is not set — only safe if your Qdrant endpoint has no API key auth')
   }
 
+  if (process.env.OCR_ENABLED === 'true') {
+    const hasCreds =
+      process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim()
+    if (!hasCreds) {
+      console.warn(
+        '[env] OCR_ENABLED=true but neither GOOGLE_APPLICATION_CREDENTIALS nor GOOGLE_SERVICE_ACCOUNT_JSON is set'
+      )
+    }
+  }
+
   if (process.env.RERANK_ENABLED === 'true' && !process.env.COHERE_API_KEY?.trim()) {
     console.warn('[env] RERANK_ENABLED=true but COHERE_API_KEY is missing — reranking will be skipped at runtime')
   }

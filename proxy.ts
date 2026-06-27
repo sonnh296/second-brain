@@ -41,6 +41,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/chat') ||
     pathname.startsWith('/api/documents') ||
     pathname.startsWith('/api/notes') ||
+    pathname.startsWith('/api/tags') ||
+    pathname.startsWith('/api/folders') ||
     pathname.startsWith('/api/admin') ||
     pathname.startsWith('/api/auth')
 
@@ -69,6 +71,8 @@ export const config = {
     '/api/chat',
     '/api/documents/:path*',
     '/api/notes',
+    '/api/tags/:path*',
+    '/api/folders/:path*',
     '/api/admin/:path*',
     '/api/auth/:path*',
   ],

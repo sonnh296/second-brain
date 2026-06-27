@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { TagBadge } from '@/components/documents/tag-manager'
 import type { Document } from '@/lib/db/types'
 
 type DocStatus = Document['status']
@@ -58,11 +59,21 @@ export function DriveGridItem({
         {doc.description && (
           <p className="text-[10px] text-muted-foreground line-clamp-1 w-full">{doc.description}</p>
         )}
+        {doc.tags && doc.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 justify-center w-full">
+            {doc.tags.slice(0, 3).map((tag) => (
+              <TagBadge key={tag.id} tag={tag} />
+            ))}
+            {doc.tags.length > 3 && (
+              <span className="text-[10px] text-muted-foreground">+{doc.tags.length - 3}</span>
+            )}
+          </div>
+        )}
         <StatusBadge status={doc.status} />
       </div>
       <button
         type="button"
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted"
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted cursor-pointer"
         onClick={(e) => {
           e.stopPropagation()
           setMenuOpen(!menuOpen)
@@ -78,7 +89,7 @@ export function DriveGridItem({
           {onEdit && (
             <button
               type="button"
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted cursor-pointer"
               onClick={onEdit}
             >
               Sửa
@@ -86,7 +97,7 @@ export function DriveGridItem({
           )}
           <button
             type="button"
-            className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted"
+            className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer"
             onClick={onDelete}
           >
             Xóa
@@ -126,6 +137,13 @@ export function DriveListItem({
         <p className="text-sm font-medium truncate">{doc.filename}</p>
         {doc.description && (
           <p className="text-xs text-muted-foreground truncate">{doc.description}</p>
+        )}
+        {doc.tags && doc.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {doc.tags.map((tag) => (
+              <TagBadge key={tag.id} tag={tag} />
+            ))}
+          </div>
         )}
       </div>
       <span className="text-xs text-muted-foreground shrink-0 hidden sm:block">

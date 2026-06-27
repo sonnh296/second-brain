@@ -4,12 +4,15 @@ import { createServerSupabaseClient } from '@/lib/db/server'
 import { deleteObject } from '@/lib/storage'
 import { deleteByDocument, updateDocumentFilename } from '@/lib/vector'
 import { enqueueIngestionJob, enqueueDocumentCleanupJob } from '@/lib/queue'
+import { fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
 import { logger } from '@/lib/logger'
 
 const UpdateDocumentSchema = z.object({
   filename: z.string().min(1).max(200).optional(),
   description: z.string().max(500).optional().nullable(),
   note_content: z.string().min(1).max(50000).optional(),
+  tag_ids: z.array(z.string().uuid()).max(20).optional(),
+  folder_id: z.string().uuid().nullable().optional(),
 })
 
 export async function PATCH(
@@ -46,6 +49,21 @@ export async function PATCH(
   if (parsed.data.filename !== undefined) updates.filename = parsed.data.filename
   if (parsed.data.description !== undefined) updates.description = parsed.data.description
 
+  if (parsed.data.folder_id !== undefined) {
+    if (parsed.data.folder_id) {
+      const { data: folder } = await supabase
+        .from('folders')
+        .select('id')
+        .eq('id', parsed.data.folder_id)
+        .eq('user_id', user.id)
+        .single()
+      if (!folder) {
+        return NextResponse.json({ error: 'Thư mục không tồn tại' }, { status: 400 })
+      }
+    }
+    updates.folder_id = parsed.data.folder_id
+  }
+
   let shouldReingest = false
   if (parsed.data.note_content !== undefined) {
     if (doc.file_type !== 'note') {
@@ -59,19 +77,35 @@ export async function PATCH(
     shouldReingest = true
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && parsed.data.tag_ids === undefined) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
 
-  const { data: updated, error } = await supabase
-    .from('documents')
-    .update(updates)
-    .eq('id', documentId)
-    .select('id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, created_at')
-    .single()
+  let updated = doc as Record<string, unknown>
 
-  if (error || !updated) {
-    return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
+  if (Object.keys(updates).length > 0) {
+    const { data: updatedRow, error } = await supabase
+      .from('documents')
+      .update(updates)
+      .eq('id', documentId)
+      .select(
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+      )
+      .single()
+
+    if (error || !updatedRow) {
+      return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
+    }
+    updated = updatedRow
+  } else {
+    const { data: existing } = await supabase
+      .from('documents')
+      .select(
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+      )
+      .eq('id', documentId)
+      .single()
+    if (existing) updated = existing
   }
 
   if (parsed.data.filename && parsed.data.filename !== doc.filename) {
@@ -91,7 +125,21 @@ export async function PATCH(
     })
   }
 
-  return NextResponse.json(updated)
+  if (parsed.data.tag_ids !== undefined) {
+    const tagResult = await syncDocumentTags(
+      supabase,
+      user.id,
+      documentId,
+      parsed.data.tag_ids
+    )
+    if (!tagResult.ok) {
+      return NextResponse.json({ error: tagResult.error }, { status: 400 })
+    }
+  }
+
+  const tags = await fetchTagsForDocument(supabase, documentId)
+
+  return NextResponse.json({ ...updated, tags })
 }
 
 export async function DELETE(

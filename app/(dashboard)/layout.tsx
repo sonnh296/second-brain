@@ -33,9 +33,9 @@ export default async function DashboardLayout({
         <form action="/api/auth/signout" method="post">
           <button
             type="submit"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
-            Sign out
+            Đăng xuất
           </button>
         </form>
       </header>

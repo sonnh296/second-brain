@@ -1,6 +1,23 @@
 export type DocumentStatus = 'pending' | 'processing' | 'done' | 'failed'
 export type MessageRole = 'user' | 'assistant'
 
+export interface Tag {
+  id: string
+  name: string
+  color: string
+  created_at?: string
+}
+
+export interface Folder {
+  id: string
+  user_id: string
+  parent_id: string | null
+  name: string
+  color: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Document {
   id: string
   user_id: string
@@ -14,7 +31,11 @@ export interface Document {
   note_content: string | null
   description: string | null
   content_hash: string | null
+  extracted_content: string | null
+  ocr_text: string | null
+  folder_id: string | null
   created_at: string
+  tags?: Tag[]
 }
 
 export interface DocumentChunk {

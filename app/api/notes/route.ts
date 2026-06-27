@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger'
 const CreateNoteSchema = z.object({
   title: z.string().min(1).max(200),
   content: z.string().min(1).max(50000),
+  folder_id: z.string().uuid().nullable().optional(),
 })
 
 export async function POST(req: NextRequest) {
@@ -33,8 +34,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { title, content } = parsed.data
+  const { title, content, folder_id: folderId } = parsed.data
   const contentBytes = Buffer.byteLength(content, 'utf8')
+
+  if (folderId) {
+    const { data: folder } = await supabase
+      .from('folders')
+      .select('id')
+      .eq('id', folderId)
+      .eq('user_id', userId)
+      .single()
+    if (!folder) {
+      return NextResponse.json({ error: 'Thư mục không tồn tại' }, { status: 400 })
+    }
+  }
 
   try {
     const quota = await checkDocumentQuota(supabase, userId, contentBytes)
@@ -53,6 +66,7 @@ export async function POST(req: NextRequest) {
         file_type: 'note',
         r2_key: 'note',
         note_content: content,
+        folder_id: folderId ?? null,
         file_size_bytes: contentBytes,
         status: 'pending',
       })

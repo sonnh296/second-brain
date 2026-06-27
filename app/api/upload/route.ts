@@ -57,6 +57,21 @@ export async function POST(req: NextRequest) {
         ? rawDescription.trim().slice(0, MAX_UPLOAD_DESCRIPTION_LENGTH)
         : rawDescription?.trim() || null
 
+    const rawFolderId = (formData.get('folder_id') as string) || null
+    let folderId: string | null = null
+    if (rawFolderId && rawFolderId !== 'root') {
+      const { data: folder } = await supabase
+        .from('folders')
+        .select('id')
+        .eq('id', rawFolderId)
+        .eq('user_id', userId)
+        .single()
+      if (!folder) {
+        return NextResponse.json({ error: 'Thư mục không tồn tại' }, { status: 400 })
+      }
+      folderId = folder.id
+    }
+
     const quota = await checkDocumentQuota(supabase, userId, blob.size)
     if (!quota.ok) {
       return NextResponse.json(
@@ -80,6 +95,7 @@ export async function POST(req: NextRequest) {
         file_type: fileType,
         r2_key: 'pending',
         description,
+        folder_id: folderId,
         file_size_bytes: fileSizeBytes,
         status: 'pending',
       })

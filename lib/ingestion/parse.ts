@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 
-export type SupportedFileType = 'pdf' | 'docx' | 'txt'
+export type SupportedFileType = 'pdf' | 'docx' | 'txt' | 'md' | 'csv' | 'json' | 'html'
 
 /**
  * Parse a file from a local path and return its plain text content.
@@ -33,7 +33,11 @@ export async function parseFile(
       return result.value
     }
 
-    case 'txt': {
+    case 'txt':
+    case 'md':
+    case 'csv':
+    case 'json':
+    case 'html': {
       const content = await fs.readFile(filePath, 'utf-8')
       return content
     }

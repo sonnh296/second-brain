@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Readable } from 'stream'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { getObjectStream } from '@/lib/storage'
+import { isBrowserInlineType, mimeForType } from '@/lib/upload/file-types'
+
+function contentDisposition(filename: string, inline: boolean): string {
+  const encoded = encodeURIComponent(filename)
+  const mode = inline ? 'inline' : 'attachment'
+  return `${mode}; filename="${encoded}"; filename*=UTF-8''${encoded}`
+}
 
 export async function GET(
   req: NextRequest,
@@ -16,6 +23,7 @@ export async function GET(
   }
 
   const { id } = await params
+  const forceDownload = req.nextUrl.searchParams.get('download') === '1'
 
   const { data: doc } = await supabase
     .from('documents')
@@ -33,17 +41,15 @@ export async function GET(
   }
 
   const { stream, contentType } = await getObjectStream(doc.r2_key)
-
-  const mimeTypes: Record<string, string> = {
-    pdf: 'application/pdf',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    txt: 'text/plain',
-  }
+  const mime = mimeForType(doc.file_type)
+  const inline =
+    !forceDownload && (isBrowserInlineType(doc.file_type) || mime.startsWith('text/'))
 
   return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
     headers: {
-      'Content-Type': contentType ?? mimeTypes[doc.file_type] ?? 'application/octet-stream',
-      'Content-Disposition': `inline; filename="${encodeURIComponent(doc.filename)}"`,
+      'Content-Type': contentType?.startsWith('application/octet') ? mime : (contentType ?? mime),
+      'Content-Disposition': contentDisposition(doc.filename, inline),
+      'X-Content-Type-Options': 'nosniff',
     },
   })
 }

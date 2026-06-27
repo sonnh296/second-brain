@@ -26,9 +26,16 @@ describe('createValidatedUploadStream', () => {
     expect(uploaded.toString()).toBe(content)
   })
 
-  it('rejects invalid file type before streaming', async () => {
+  it('accepts storage-only file types', async () => {
     const file = new File(['not audio'], 'song.mp3', { type: 'audio/mpeg' })
     const result = await createValidatedUploadStream(file, 'song.mp3')
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.result.fileType).toBe('mp3')
+  })
+
+  it('rejects blocked executable extensions', async () => {
+    const file = new File(['MZ'], 'virus.exe', { type: 'application/octet-stream' })
+    const result = await createValidatedUploadStream(file, 'virus.exe')
     expect(result.ok).toBe(false)
   })
 })

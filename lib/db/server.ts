@@ -1,7 +1,15 @@
 import { createServerClient } from '@supabase/ssr'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClientOptions } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { withSessionMaxAge } from '@/lib/auth/session'
+
+/** Node < 22 has no native WebSocket — required by @supabase/realtime-js in workers/scripts. */
+function nodeSupabaseOptions(): SupabaseClientOptions<'public'> | undefined {
+  if (typeof globalThis.WebSocket !== 'undefined') return undefined
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ws = require('ws') as typeof import('ws')
+  return { realtime: { transport: ws } }
+}
 
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies()
@@ -31,6 +39,7 @@ export async function createServerSupabaseClient() {
 export function createServiceSupabaseClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    nodeSupabaseOptions()
   )
 }

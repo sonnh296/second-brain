@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   FileText,
   FileType,
@@ -11,6 +11,14 @@ import {
   Search,
   LayoutGrid,
   List,
+  Image as ImageIcon,
+  Tag,
+  Film,
+  Music,
+  Archive,
+  Folder as FolderIcon,
+  FolderPlus,
+  ChevronLeft,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,8 +26,16 @@ import { Label } from '@/components/ui/label'
 import { DriveGridItem, DriveListItem } from '@/components/documents/document-grid'
 import { DocumentPreviewPanel } from '@/components/documents/document-preview-panel'
 import { NoteModal } from '@/components/documents/note-modal'
+import { FileDropzone } from '@/components/documents/file-dropzone'
+import { TagManager } from '@/components/documents/tag-manager'
+import {
+  FolderGridItem,
+  FolderListItem,
+  FolderBreadcrumb,
+} from '@/components/documents/folder-items'
 import { useDocumentPolling } from '@/hooks/use-document-polling'
-import type { Document } from '@/lib/db/types'
+import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
+import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
 
 type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
 type TypeFilter = 'all' | 'note' | 'pdf' | 'docx' | 'txt'
@@ -34,6 +50,10 @@ interface PreviewData {
   content: string | null
   preview_type: string
   message?: string
+  image_url?: string
+  viewer_url?: string
+  can_inline?: boolean
+  download_url?: string
 }
 
 interface NoteModalState {
@@ -41,13 +61,7 @@ interface NoteModalState {
   doc?: Document
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  all: 'Tất cả',
-  note: 'Ghi chú',
-  pdf: 'PDF',
-  docx: 'Word',
-  txt: 'Văn bản',
-}
+const TYPE_LABELS_LOCAL = TYPE_LABELS
 
 const STATUS_LABELS: Record<DocStatus, string> = {
   done: 'Sẵn sàng',
@@ -80,7 +94,30 @@ function FileIcon({ type, size = 'md' }: { type: string; size?: 'sm' | 'md' }) {
     case 'docx':
       return <FileType className={`${cls} text-blue-500`} />
     case 'txt':
+    case 'md':
+    case 'csv':
+    case 'json':
+    case 'html':
       return <FileText className={`${cls} text-slate-500`} />
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+    case 'svg':
+      return <ImageIcon className={`${cls} text-emerald-500`} />
+    case 'mp3':
+    case 'wav':
+      return <Music className={`${cls} text-violet-500`} />
+    case 'mp4':
+    case 'mov':
+      return <Film className={`${cls} text-pink-500`} />
+    case 'zip':
+    case 'xlsx':
+    case 'xls':
+    case 'pptx':
+    case 'ppt':
+      return <Archive className={`${cls} text-orange-500`} />
     default:
       return <File className={`${cls} text-muted-foreground`} />
   }
@@ -93,6 +130,24 @@ export default function DocumentsPage() {
   const [uploadError, setUploadError] = useState('')
   const [showUploadPanel, setShowUploadPanel] = useState(false)
   const [uploadDescription, setUploadDescription] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [tags, setTags] = useState<TagType[]>([])
+  const [tagFilter, setTagFilter] = useState<string | 'all'>('all')
+  const [showTagManager, setShowTagManager] = useState(false)
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
+  const [savingTags, setSavingTags] = useState(false)
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [allFolders, setAllFolders] = useState<Folder[]>([])
+  const [breadcrumb, setBreadcrumb] = useState<{ id: string | null; name: string }[]>([
+    { id: null, name: 'Gốc' },
+  ])
+  const [newFolderName, setNewFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [showNewFolder, setShowNewFolder] = useState(false)
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [savingFolder, setSavingFolder] = useState(false)
+  const [reprocessingOcr, setReprocessingOcr] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -109,23 +164,96 @@ export default function DocumentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('date')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const fetchDocuments = useCallback(async () => {
-    const res = await fetch('/api/documents')
+  const fetchTags = useCallback(async () => {
+    const res = await fetch('/api/tags')
+    if (res.ok) setTags(await res.json())
+  }, [])
+
+  const fetchAllFolders = useCallback(async () => {
+    const res = await fetch('/api/folders?all=1')
+    if (res.ok) setAllFolders(await res.json())
+  }, [])
+
+  const fetchFolders = useCallback(async (parentId: string | null) => {
+    const q = parentId ? `?parent_id=${parentId}` : '?parent_id=root'
+    const res = await fetch(`/api/folders${q}`)
+    if (res.ok) setFolders(await res.json())
+  }, [])
+
+  const loadBreadcrumb = useCallback(async (folderId: string | null) => {
+    if (!folderId) {
+      setBreadcrumb([{ id: null, name: 'Gốc' }])
+      return
+    }
+    const res = await fetch(`/api/folders/${folderId}`)
+    if (res.ok) {
+      const data = await res.json()
+      setBreadcrumb([{ id: null, name: 'Gốc' }, ...data.breadcrumb])
+    }
+  }, [])
+
+  const fetchDocuments = useCallback(async (folderId: string | null) => {
+    const q = folderId ? `?folder_id=${folderId}` : '?folder_id=root'
+    const res = await fetch(`/api/documents${q}`)
     if (res.ok) setDocuments(await res.json())
   }, [])
 
+  const refreshFolderView = useCallback(
+    async (folderId: string | null) => {
+      await Promise.all([
+        fetchFolders(folderId),
+        fetchDocuments(folderId),
+        loadBreadcrumb(folderId),
+        fetchAllFolders(),
+      ])
+    },
+    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders]
+  )
+
   useEffect(() => {
-    fetchDocuments().finally(() => setLoading(false))
-  }, [fetchDocuments])
+    Promise.all([refreshFolderView(currentFolderId), fetchTags()]).finally(() =>
+      setLoading(false)
+    )
+  }, [currentFolderId, refreshFolderView, fetchTags])
 
   useDocumentPolling(documents, setDocuments)
+
+  function navigateToFolder(folderId: string | null) {
+    setCurrentFolderId(folderId)
+    closePreview()
+    setLoading(true)
+  }
+
+  async function createFolder() {
+    if (!newFolderName.trim()) return
+    setCreatingFolder(true)
+    const res = await fetch('/api/folders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newFolderName.trim(), parent_id: currentFolderId }),
+    })
+    setCreatingFolder(false)
+    if (res.ok) {
+      setNewFolderName('')
+      setShowNewFolder(false)
+      await refreshFolderView(currentFolderId)
+    }
+  }
+
+  async function deleteFolder(folderId: string) {
+    if (!confirm('Xóa thư mục này? Tài liệu bên trong sẽ chuyển về gốc.')) return
+    await fetch(`/api/folders/${folderId}`, { method: 'DELETE' })
+    if (currentFolderId === folderId) navigateToFolder(null)
+    else await refreshFolderView(currentFolderId)
+  }
 
   useEffect(() => {
     if (selectedDoc) {
       setEditName(selectedDoc.filename)
       setEditDescription(selectedDoc.description ?? '')
+      setSelectedTagIds(selectedDoc.tags?.map((t) => t.id) ?? [])
+      setSelectedFolderId(selectedDoc.folder_id ?? null)
     }
   }, [selectedDoc])
 
@@ -137,12 +265,16 @@ export default function DocumentsPage() {
     if (statusFilter !== 'all') {
       result = result.filter((d) => d.status === statusFilter)
     }
+    if (tagFilter !== 'all') {
+      result = result.filter((d) => d.tags?.some((t) => t.id === tagFilter))
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       result = result.filter(
         (d) =>
           d.filename.toLowerCase().includes(q) ||
-          (d.description?.toLowerCase().includes(q) ?? false)
+          (d.description?.toLowerCase().includes(q) ?? false) ||
+          (d.tags?.some((t) => t.name.toLowerCase().includes(q)) ?? false)
       )
     }
     result.sort((a, b) => {
@@ -150,7 +282,7 @@ export default function DocumentsPage() {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
     return result
-  }, [documents, typeFilter, statusFilter, searchQuery, sortBy])
+  }, [documents, typeFilter, statusFilter, tagFilter, searchQuery, sortBy])
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = { all: documents.length }
@@ -162,14 +294,14 @@ export default function DocumentsPage() {
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const file = fileInputRef.current?.files?.[0]
-    if (!file) return
+    if (!selectedFile) return
     setUploading(true)
     setUploadError('')
     const formData = new FormData()
-    formData.append('file', file)
-    formData.append('filename', file.name)
+    formData.append('file', selectedFile)
+    formData.append('filename', selectedFile.name)
     if (uploadDescription.trim()) formData.append('description', uploadDescription.trim())
+    if (currentFolderId) formData.append('folder_id', currentFolderId)
     const res = await fetch('/api/upload', { method: 'POST', body: formData })
     const data = await res.json()
     if (!res.ok) {
@@ -179,9 +311,9 @@ export default function DocumentsPage() {
     }
     setUploading(false)
     setUploadDescription('')
+    setSelectedFile(null)
     setShowUploadPanel(false)
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    await fetchDocuments()
+    await refreshFolderView(currentFolderId)
   }
 
   function openCreateNoteModal() {
@@ -216,7 +348,11 @@ export default function DocumentsPage() {
       const res = await fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: noteTitle.trim(), content: noteContent.trim() }),
+        body: JSON.stringify({
+          title: noteTitle.trim(),
+          content: noteContent.trim(),
+          folder_id: currentFolderId,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -238,7 +374,7 @@ export default function DocumentsPage() {
     }
     setSavingNote(false)
     closeNoteModal()
-    await fetchDocuments()
+    await refreshFolderView(currentFolderId)
   }
 
   async function openDocument(doc: Document) {
@@ -268,16 +404,62 @@ export default function DocumentsPage() {
     })
     if (res.ok) {
       setSelectedDoc(await res.json())
-      await fetchDocuments()
+      await refreshFolderView(currentFolderId)
     }
     setSavingMeta(false)
+  }
+
+  async function saveTags() {
+    if (!selectedDoc) return
+    setSavingTags(true)
+    const res = await fetch(`/api/documents/${selectedDoc.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag_ids: selectedTagIds }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setSelectedDoc(updated)
+      await refreshFolderView(currentFolderId)
+    }
+    setSavingTags(false)
+  }
+
+  async function saveFolder() {
+    if (!selectedDoc) return
+    setSavingFolder(true)
+    const res = await fetch(`/api/documents/${selectedDoc.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_id: selectedFolderId }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setSelectedDoc(updated)
+      await refreshFolderView(currentFolderId)
+    }
+    setSavingFolder(false)
+  }
+
+  async function reprocessOcr() {
+    if (!selectedDoc) return
+    setReprocessingOcr(true)
+    const res = await fetch(`/api/documents/${selectedDoc.id}/reprocess`, { method: 'POST' })
+    if (res.ok) {
+      await refreshFolderView(currentFolderId)
+      if (selectedDoc) {
+        const previewRes = await fetch(`/api/documents/${selectedDoc.id}/preview`)
+        if (previewRes.ok) setPreview(await previewRes.json())
+      }
+    }
+    setReprocessingOcr(false)
   }
 
   async function handleDelete(documentId: string) {
     if (!confirm('Xóa mục này? Không thể hoàn tác.')) return
     await fetch(`/api/documents/${documentId}`, { method: 'DELETE' })
     if (selectedDoc?.id === documentId) closePreview()
-    await fetchDocuments()
+    await refreshFolderView(currentFolderId)
   }
 
   return (
@@ -293,7 +475,7 @@ export default function DocumentsPage() {
               key={item.id}
               type="button"
               onClick={() => setTypeFilter(item.id)}
-              className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+              className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
                 typeFilter === item.id
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'text-foreground hover:bg-muted'
@@ -305,6 +487,43 @@ export default function DocumentsPage() {
             </button>
           ))}
         </nav>
+        <div className="p-2 border-t space-y-2">
+          <div className="flex items-center justify-between px-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tag</p>
+            <button
+              type="button"
+              onClick={() => setShowTagManager(true)}
+              className="text-xs text-primary hover:underline cursor-pointer"
+            >
+              Quản lý
+            </button>
+          </div>
+          <div className="space-y-0.5 max-h-32 overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setTagFilter('all')}
+              className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                tagFilter === 'all' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
+              }`}
+            >
+              <Tag className="h-3.5 w-3.5" />
+              Tất cả tag
+            </button>
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => setTagFilter(tag.id)}
+                className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                  tagFilter === tag.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                <span className="truncate">{tag.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="p-2 border-t">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-2 mb-2">Trạng thái</p>
           <select
@@ -325,7 +544,21 @@ export default function DocumentsPage() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Toolbar */}
         <div className="shrink-0 border-b bg-background px-4 py-3 flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px] max-w-md">
+          {currentFolderId && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-9 px-2"
+              onClick={() => {
+                const parent = breadcrumb.length > 2 ? breadcrumb[breadcrumb.length - 2].id : null
+                navigateToFolder(parent)
+              }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <FolderBreadcrumb items={breadcrumb} onNavigate={navigateToFolder} />
+          <div className="relative flex-1 min-w-[160px] max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={searchQuery}
@@ -346,7 +579,7 @@ export default function DocumentsPage() {
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`p-2 ${viewMode === 'grid' ? 'bg-muted' : 'hover:bg-muted/50'}`}
+              className={`p-2 cursor-pointer ${viewMode === 'grid' ? 'bg-muted' : 'hover:bg-muted/50'}`}
               title="Lưới"
             >
               <LayoutGrid className="h-4 w-4" />
@@ -354,12 +587,16 @@ export default function DocumentsPage() {
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`p-2 ${viewMode === 'list' ? 'bg-muted' : 'hover:bg-muted/50'}`}
+              className={`p-2 cursor-pointer ${viewMode === 'list' ? 'bg-muted' : 'hover:bg-muted/50'}`}
               title="Danh sách"
             >
               <List className="h-4 w-4" />
             </button>
           </div>
+          <Button size="sm" variant="outline" onClick={() => setShowNewFolder((v) => !v)}>
+            <FolderPlus className="h-4 w-4 mr-1.5" />
+            Thư mục
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowUploadPanel((v) => !v)}>
             <Upload className="h-4 w-4 mr-1.5" />
             Upload
@@ -370,19 +607,36 @@ export default function DocumentsPage() {
           </Button>
         </div>
 
+        {showNewFolder && (
+          <div className="shrink-0 border-b bg-muted/30 px-4 py-3 flex flex-wrap items-end gap-2 max-w-md">
+            <div className="flex-1 min-w-[140px]">
+              <Label className="text-xs">Tên thư mục mới</Label>
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Tên thư mục..."
+                className="mt-1 h-9 text-sm"
+                onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+              />
+            </div>
+            <Button size="sm" onClick={createFolder} disabled={creatingFolder || !newFolderName.trim()}>
+              {creatingFolder ? 'Đang tạo...' : 'Tạo'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowNewFolder(false)}>
+              Đóng
+            </Button>
+          </div>
+        )}
+
         {showUploadPanel && (
-          <div className="shrink-0 border-b bg-muted/30 px-4 py-3">
-            <form onSubmit={handleUpload} className="flex flex-wrap items-end gap-3 max-w-2xl">
-              <div className="flex-1 min-w-[200px]">
-                <Label className="text-xs">Chọn file</Label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  className="mt-1 w-full text-sm"
-                />
-              </div>
-              <div className="flex-1 min-w-[160px]">
+          <div className="shrink-0 border-b bg-muted/30 px-4 py-4">
+            <form onSubmit={handleUpload} className="flex flex-col gap-3 max-w-xl">
+              <FileDropzone
+                disabled={uploading}
+                selectedFile={selectedFile}
+                onFileSelect={setSelectedFile}
+              />
+              <div>
                 <Label className="text-xs">Mô tả (tuỳ chọn)</Label>
                 <Input
                   value={uploadDescription}
@@ -391,63 +645,107 @@ export default function DocumentsPage() {
                   className="mt-1 h-9 text-sm"
                 />
               </div>
-              <Button type="submit" size="sm" disabled={uploading}>
-                {uploading ? 'Đang upload...' : 'Tải lên'}
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setShowUploadPanel(false)}>
-                Đóng
-              </Button>
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" disabled={uploading || !selectedFile}>
+                  {uploading ? 'Đang upload...' : 'Tải lên'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowUploadPanel(false)
+                    setSelectedFile(null)
+                    setUploadError('')
+                  }}
+                >
+                  Đóng
+                </Button>
+              </div>
             </form>
             {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
           </div>
         )}
 
         {/* File area + preview split */}
-        <div className="flex-1 flex min-h-0">
-          <div className={`flex-1 min-h-0 overflow-y-auto p-4 ${selectedDoc ? 'border-r' : ''}`}>
+        <div className="flex-1 flex min-h-0 overflow-hidden">
+          <div className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-4 ${selectedDoc ? '' : ''}`}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-medium">
-                {TYPE_LABELS[typeFilter]} · {filteredDocs.length} mục
+                {breadcrumb[breadcrumb.length - 1]?.name ?? 'Gốc'} · {folders.length} thư mục ·{' '}
+                {filteredDocs.length} tài liệu
               </h2>
             </div>
 
             {loading ? (
               <p className="text-sm text-muted-foreground">Đang tải...</p>
-            ) : filteredDocs.length === 0 ? (
+            ) : folders.length === 0 && filteredDocs.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <File className="h-12 w-12 mb-3 opacity-40" />
-                <p className="text-sm">Không có tài liệu nào</p>
-                <p className="text-xs mt-1">Thử đổi bộ lọc hoặc upload file mới</p>
-              </div>
-            ) : viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {filteredDocs.map((doc) => (
-                  <DriveGridItem
-                    key={doc.id}
-                    doc={doc}
-                    selected={selectedDoc?.id === doc.id}
-                    onOpen={() => openDocument(doc)}
-                    onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
-                    onDelete={() => handleDelete(doc.id)}
-                    fileIcon={<FileIcon type={doc.file_type} />}
-                  />
-                ))}
+                <FolderIcon className="h-12 w-12 mb-3 opacity-40" />
+                <p className="text-sm">Thư mục trống</p>
+                <p className="text-xs mt-1">Tạo thư mục hoặc upload file mới</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {filteredDocs.map((doc) => (
-                  <DriveListItem
-                    key={doc.id}
-                    doc={doc}
-                    selected={selectedDoc?.id === doc.id}
-                    onOpen={() => openDocument(doc)}
-                    onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
-                    onDelete={() => handleDelete(doc.id)}
-                    fileIcon={<FileIcon type={doc.file_type} size="sm" />}
-                    formatBytes={formatBytes}
-                  />
-                ))}
-              </div>
+              <>
+                {viewMode === 'grid' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
+                    {folders.map((folder) => (
+                      <FolderGridItem
+                        key={folder.id}
+                        folder={folder}
+                        onOpen={() => navigateToFolder(folder.id)}
+                        onDelete={() => deleteFolder(folder.id)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1 mb-4">
+                    {folders.map((folder) => (
+                      <FolderListItem
+                        key={folder.id}
+                        folder={folder}
+                        onOpen={() => navigateToFolder(folder.id)}
+                        onDelete={() => deleteFolder(folder.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {filteredDocs.length === 0 ? (
+                  folders.length > 0 ? null : (
+                    <p className="text-sm text-muted-foreground">Không có tài liệu</p>
+                  )
+                ) : viewMode === 'grid' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {filteredDocs.map((doc) => (
+                      <DriveGridItem
+                        key={doc.id}
+                        doc={doc}
+                        selected={selectedDoc?.id === doc.id}
+                        onOpen={() => openDocument(doc)}
+                        onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
+                        onDelete={() => handleDelete(doc.id)}
+                        fileIcon={<FileIcon type={doc.file_type} />}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredDocs.map((doc) => (
+                      <DriveListItem
+                        key={doc.id}
+                        doc={doc}
+                        selected={selectedDoc?.id === doc.id}
+                        onOpen={() => openDocument(doc)}
+                        onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
+                        onDelete={() => handleDelete(doc.id)}
+                        fileIcon={<FileIcon type={doc.file_type} size="sm" />}
+                        formatBytes={formatBytes}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -460,13 +758,25 @@ export default function DocumentsPage() {
               editName={editName}
               editDescription={editDescription}
               savingMeta={savingMeta}
-              typeLabels={TYPE_LABELS}
+              typeLabels={TYPE_LABELS_LOCAL}
               fileIcon={<FileIcon type={selectedDoc.file_type} />}
               formatBytes={formatBytes}
+              allTags={tags}
+              allFolders={allFolders}
+              selectedTagIds={selectedTagIds}
+              selectedFolderId={selectedFolderId}
+              savingTags={savingTags}
+              savingFolder={savingFolder}
               onClose={closePreview}
               onEditName={setEditName}
               onEditDescription={setEditDescription}
               onSaveMetadata={saveMetadata}
+              onTagIdsChange={setSelectedTagIds}
+              onSaveTags={saveTags}
+              onFolderChange={setSelectedFolderId}
+              onSaveFolder={saveFolder}
+              onReprocessOcr={isImageType(selectedDoc.file_type) ? reprocessOcr : undefined}
+              reprocessingOcr={reprocessingOcr}
               onEditNote={
                 selectedDoc.file_type === 'note'
                   ? () => openEditNoteModal(selectedDoc)
@@ -490,6 +800,17 @@ export default function DocumentsPage() {
           onContentChange={setNoteContent}
           onSave={saveNote}
           onClose={closeNoteModal}
+        />
+      )}
+
+      {showTagManager && (
+        <TagManager
+          tags={tags}
+          onTagsChange={async () => {
+            await fetchTags()
+            await refreshFolderView(currentFolderId)
+          }}
+          onClose={() => setShowTagManager(false)}
         />
       )}
     </div>
