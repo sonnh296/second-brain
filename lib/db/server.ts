@@ -8,7 +8,13 @@ function nodeSupabaseOptions(): SupabaseClientOptions<'public'> | undefined {
   if (typeof globalThis.WebSocket !== 'undefined') return undefined
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ws = require('ws') as typeof import('ws')
-  return { realtime: { transport: ws } }
+  return {
+    realtime: {
+      transport: ws as unknown as NonNullable<
+        SupabaseClientOptions<'public'>['realtime']
+      >['transport'],
+    },
+  }
 }
 
 export async function createServerSupabaseClient() {

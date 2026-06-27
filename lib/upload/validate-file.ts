@@ -86,13 +86,13 @@ export function detectAndValidateFileType(
     if (fromMagic === 'jpeg' && (fromExt === 'jpg' || fromExt === 'jpeg')) {
       return { ok: true, fileType: fromExt }
     }
-    if (fromExt !== fromMagic && fromExt !== 'txt' && fromExt !== 'md' && fromExt !== 'file') {
+    if (fromExt !== fromMagic && fromExt !== 'txt' && fromExt !== 'md') {
       return {
         ok: false,
         error: `Nội dung file không khớp phần mở rộng (mong đợi ${fromExt}, phát hiện ${fromMagic})`,
       }
     }
-    return { ok: true, fileType: fromExt === 'file' ? fromMagic : fromExt }
+    return { ok: true, fileType: fromExt }
   }
 
   if (['txt', 'md', 'csv', 'json', 'html', 'svg'].includes(fromExt)) {

@@ -11,6 +11,21 @@ const UpdateFolderSchema = z.object({
     .optional(),
 })
 
+async function getFolderParentId(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  id: string,
+  userId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from('folders')
+    .select('parent_id')
+    .eq('id', id)
+    .eq('user_id', userId)
+    .single()
+
+  return data?.parent_id ?? null
+}
+
 async function wouldCreateCycle(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   folderId: string,
@@ -27,15 +42,7 @@ async function wouldCreateCycle(
     if (current === folderId) return true
     if (visited.has(current)) return true
     visited.add(current)
-
-    const { data } = await supabase
-      .from('folders')
-      .select('parent_id')
-      .eq('id', current)
-      .eq('user_id', userId)
-      .single()
-
-    current = data?.parent_id ?? null
+    current = await getFolderParentId(supabase, current, userId)
   }
 
   return false
