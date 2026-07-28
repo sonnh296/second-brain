@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import type { Tag } from '@/lib/db/types'
 
 const TAG_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444']
@@ -16,6 +17,7 @@ interface TagManagerProps {
 }
 
 export function TagManager({ tags, onTagsChange, onClose }: TagManagerProps) {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState(TAG_COLORS[0])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -65,13 +67,19 @@ export function TagManager({ tags, onTagsChange, onClose }: TagManagerProps) {
   }
 
   async function deleteTag(tagId: string) {
-    if (!confirm('Xóa tag này? Tag sẽ bị gỡ khỏi tất cả tài liệu.')) return
+    const ok = await confirm({
+      title: 'Xóa tag này?',
+      description: 'Tag sẽ bị gỡ khỏi tất cả tài liệu.',
+      confirmLabel: 'Xóa tag',
+    })
+    if (!ok) return
     await fetch(`/api/tags/${tagId}`, { method: 'DELETE' })
     onTagsChange()
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      {confirmDialog}
       <div className="w-full max-w-md rounded-xl border bg-background shadow-lg">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-sm font-semibold">Quản lý tag</h2>

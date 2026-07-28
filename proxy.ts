@@ -35,6 +35,7 @@ export async function proxy(request: NextRequest) {
   const isProtectedPage =
     pathname.startsWith('/chat') ||
     pathname.startsWith('/documents') ||
+    pathname.startsWith('/profile') ||
     pathname.startsWith('/admin')
   const isProtectedApi =
     pathname.startsWith('/api/sessions') ||
@@ -43,6 +44,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/notes') ||
     pathname.startsWith('/api/tags') ||
     pathname.startsWith('/api/folders') ||
+    pathname.startsWith('/api/profile') ||
     pathname.startsWith('/api/admin') ||
     pathname.startsWith('/api/auth')
 
@@ -66,6 +68,7 @@ export const config = {
   matcher: [
     '/chat/:path*',
     '/documents/:path*',
+    '/profile/:path*',
     '/admin/:path*',
     '/api/sessions/:path*',
     '/api/chat',
@@ -73,6 +76,7 @@ export const config = {
     '/api/notes',
     '/api/tags/:path*',
     '/api/folders/:path*',
+    '/api/profile',
     '/api/admin/:path*',
     '/api/auth/:path*',
   ],

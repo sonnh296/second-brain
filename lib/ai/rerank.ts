@@ -7,6 +7,7 @@ export interface RetrievedSource {
   chunk_text: string
   score: number
   document_id: string
+  page?: number
 }
 
 const RERANK_ENABLED = process.env.RERANK_ENABLED === 'true'
@@ -28,6 +29,7 @@ export async function rerankChunks(
     chunk_text: r.payload.chunk_text,
     score: r.score,
     document_id: r.payload.document_id,
+    page: typeof r.payload.page === 'number' ? r.payload.page : undefined,
   }))
 
   if (!RERANK_ENABLED || !process.env.COHERE_API_KEY || mapped.length === 0) {

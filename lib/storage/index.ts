@@ -1,5 +1,6 @@
 import {
   S3Client,
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
@@ -76,6 +77,61 @@ export async function getObjectStream(
     stream: res.Body as Readable,
     contentType: res.ContentType,
   }
+}
+
+/** Upload a Buffer / Uint8Array to R2 */
+export async function uploadBuffer(
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType?: string
+): Promise<void> {
+  const upload = new Upload({
+    client: getS3Client(),
+    params: {
+      Bucket: BUCKET(),
+      Key: key,
+      Body: body,
+      ...(contentType ? { ContentType: contentType } : {}),
+    },
+    queueSize: 4,
+    partSize: 5 * 1024 * 1024,
+  })
+
+  await upload.done()
+}
+
+/** Read an R2 object fully into a Buffer */
+export async function getObjectBuffer(key: string): Promise<{
+  buffer: Buffer
+  contentType?: string
+}> {
+  const { stream, contentType } = await getObjectStream(key)
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return { buffer: Buffer.concat(chunks), contentType }
+}
+
+/** Build R2 key for a chat message attachment */
+export function chatAttachmentKey(
+  userId: string,
+  sessionId: string,
+  attachmentId: string,
+  ext: string
+): string {
+  return `chat/${userId}/${sessionId}/${attachmentId}.${ext}`
+}
+
+/** Server-side copy of an R2 object to a new key */
+export async function copyObject(sourceKey: string, destKey: string): Promise<void> {
+  await getS3Client().send(
+    new CopyObjectCommand({
+      Bucket: BUCKET(),
+      CopySource: `${BUCKET()}/${encodeURIComponent(sourceKey)}`,
+      Key: destKey,
+    })
+  )
 }
 
 export async function deleteObject(key: string): Promise<void> {

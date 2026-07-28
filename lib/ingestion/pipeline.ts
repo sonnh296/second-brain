@@ -3,7 +3,7 @@ import * as path from 'path'
 import { createHash } from 'crypto'
 import { v5 as uuidv5 } from 'uuid'
 import { isIndexableType } from '../upload/file-types'
-import { parseFile } from './parse'
+import { parseFileWithPages, type PageOffset } from './parse'
 import { chunkText } from './chunk'
 import { embedBatch } from './embed'
 import { extractTextFromImage, isOcrEligibleType, isOcrEnabled } from './ocr'
@@ -59,6 +59,7 @@ async function copyFromDuplicateDocument(
           filename: displayFilename,
           chunk_index: chunk.payload.chunk_index,
           chunk_text: chunk.payload.chunk_text,
+          ...(chunk.payload.page !== undefined ? { page: chunk.payload.page } : {}),
         },
       }))
     )
@@ -69,6 +70,7 @@ async function copyFromDuplicateDocument(
       chunk_text: chunk.payload.chunk_text,
       chunk_index: chunk.payload.chunk_index,
       qdrant_point_id: makePointId(targetDocumentId, chunk.payload.chunk_index),
+      page: chunk.payload.page ?? null,
     }))
     await supabase.from('document_chunks').insert(chunkRows)
 
@@ -117,13 +119,24 @@ async function markStorageOnlyDone(
     .eq('id', documentId)
 }
 
+/** Map a chunk's char offset to the PDF page it starts on. */
+function pageForOffset(pageOffsets: PageOffset[], offset: number): number | undefined {
+  let page: number | undefined
+  for (const p of pageOffsets) {
+    if (p.start <= offset) page = p.page
+    else break
+  }
+  return page
+}
+
 async function indexExtractedText(
   supabase: ReturnType<typeof createServiceSupabaseClient>,
   documentId: string,
   userId: string,
   displayFilename: string,
   rawText: string,
-  extraUpdates?: Record<string, unknown>
+  extraUpdates?: Record<string, unknown>,
+  pageOffsets?: PageOffset[] | null
 ): Promise<void> {
   const contentUpdates = { extracted_content: rawText, ...extraUpdates }
   const chunks = chunkText(rawText)
@@ -180,7 +193,13 @@ async function indexExtractedText(
   let processedCount = 0
   for (let i = 0; i < chunks.length; i += INGESTION_BATCH_SIZE) {
     const batch = chunks.slice(i, i + INGESTION_BATCH_SIZE)
-    const vectors = await embedBatch(batch.map((c) => c.text))
+    const vectors = await embedBatch(
+      batch.map((c) => c.text),
+      { userId, purpose: 'embedding_ingest', documentId }
+    )
+
+    const pageOf = (chunk: (typeof batch)[0]) =>
+      pageOffsets?.length ? pageForOffset(pageOffsets, chunk.start) : undefined
 
     await upsertChunks(
       batch.map((chunk, j) => ({
@@ -192,6 +211,7 @@ async function indexExtractedText(
           filename: displayFilename,
           chunk_index: chunk.index,
           chunk_text: chunk.text,
+          ...(pageOf(chunk) !== undefined ? { page: pageOf(chunk) } : {}),
         },
       }))
     )
@@ -202,6 +222,7 @@ async function indexExtractedText(
       chunk_text: chunk.text,
       chunk_index: chunk.index,
       qdrant_point_id: makePointId(documentId, chunk.index),
+      page: pageOf(chunk) ?? null,
     }))
     await supabase.from('document_chunks').insert(chunkRows)
 
@@ -267,6 +288,7 @@ export async function runIngestionPipeline(
     }
 
     let rawText: string
+    let pageOffsets: PageOffset[] | null = null
 
     if (fileType === 'note') {
       const { data: doc } = await supabase
@@ -289,7 +311,9 @@ export async function runIngestionPipeline(
           charCount: rawText.length,
         })
       } else {
-        rawText = await parseFile(tempPath!, fileType)
+        const parsed = await parseFileWithPages(tempPath!, fileType)
+        rawText = parsed.text
+        pageOffsets = parsed.pageOffsets
       }
     }
 
@@ -299,7 +323,8 @@ export async function runIngestionPipeline(
       userId,
       displayFilename,
       rawText,
-      canOcr ? { ocr_text: rawText } : undefined
+      canOcr ? { ocr_text: rawText } : undefined,
+      pageOffsets
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

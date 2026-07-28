@@ -1,6 +1,8 @@
 export interface TextChunk {
   text: string
   index: number
+  /** Char offset of the chunk within the normalized source text. */
+  start: number
 }
 
 const AVG_CHARS_PER_TOKEN = 4
@@ -40,7 +42,7 @@ export function chunkText(text: string): TextChunk[] {
 
     const chunkText = normalized.slice(start, end).trim()
     if (chunkText.length > 0) {
-      chunks.push({ text: chunkText, index })
+      chunks.push({ text: chunkText, index, start })
       index++
     }
 

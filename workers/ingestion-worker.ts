@@ -8,6 +8,8 @@ import { Worker } from 'bullmq'
 import IORedis from 'ioredis'
 import { runIngestionPipeline } from '../lib/ingestion/pipeline'
 import { runDocumentCleanup } from '../lib/cleanup/document-cleanup'
+import { purgeExpiredTrash } from '../lib/cleanup/purge-trash'
+import { createServiceSupabaseClient } from '../lib/db/server'
 import type { DocumentCleanupJobData, IngestionJobData } from '../lib/queue'
 import { validateServerEnv } from '../lib/env'
 import { initSentry } from '../lib/sentry'
@@ -89,7 +91,23 @@ attachWorkerEvents(cleanupWorker, 'Document cleanup')
 logger.info('Ingestion worker started')
 logger.info('Document cleanup worker started')
 
+// Periodic trash purge — hard-delete documents past retention window
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+async function runTrashPurge() {
+  try {
+    const supabase = createServiceSupabaseClient()
+    await purgeExpiredTrash(supabase)
+  } catch (err) {
+    logger.error('Trash purge run failed', { err })
+  }
+}
+
+void runTrashPurge()
+const purgeTimer = setInterval(() => void runTrashPurge(), PURGE_INTERVAL_MS)
+
 async function shutdown() {
+  clearInterval(purgeTimer)
   await Promise.all([ingestionWorker.close(), cleanupWorker.close()])
   await redis.quit()
   process.exit(0)

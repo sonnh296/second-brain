@@ -5,6 +5,9 @@ export interface RetrievedSource {
   chunk_index: number
   chunk_text: string
   score: number
+  document_id?: string
+  file_type?: string
+  page?: number
 }
 
 const CITATIONS_REGEX = /<!--CITATIONS:(\[.*?\])-->\s*$/
@@ -42,7 +45,13 @@ export function parseCitationsFromResponse(
         (s) => s.filename === filename && s.chunk_index === chunkIndex
       )
       if (found) {
-        citedSources.push({ filename, chunk_index: chunkIndex })
+        citedSources.push({
+          filename,
+          chunk_index: chunkIndex,
+          document_id: found.document_id,
+          file_type: found.file_type,
+          page: found.page,
+        })
       }
     }
 
@@ -67,5 +76,11 @@ function fallbackCitations(
     .slice()
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((s) => ({ filename: s.filename, chunk_index: s.chunk_index }))
+    .map((s) => ({
+      filename: s.filename,
+      chunk_index: s.chunk_index,
+      document_id: s.document_id,
+      file_type: s.file_type,
+      page: s.page,
+    }))
 }

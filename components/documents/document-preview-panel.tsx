@@ -210,7 +210,7 @@ export function DocumentPreviewPanel({
   const canInline = isBrowserInlineType(doc.file_type)
 
   return (
-    <div className="w-full sm:w-[min(100vw-2rem,28rem)] lg:w-lg shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l">
+    <div className="w-full sm:w-[min(100vw-2rem,28rem)] lg:w-lg shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b gap-2">
         <p className="text-sm font-medium truncate flex-1">{doc.filename}</p>
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={onClose}>

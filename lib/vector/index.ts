@@ -21,6 +21,8 @@ export interface ChunkPayload {
   filename: string
   chunk_index: number
   chunk_text: string
+  /** PDF page number the chunk starts on (page-accurate citations). */
+  page?: number
   [key: string]: unknown
 }
 

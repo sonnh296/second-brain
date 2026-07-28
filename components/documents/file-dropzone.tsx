@@ -62,7 +62,7 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
         onDrop={onDrop}
         onClick={() => !disabled && inputRef.current?.click()}
         className={cn(
-          'relative flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 transition-colors cursor-pointer',
+          'relative flex min-h-[9.5rem] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 transition-colors cursor-pointer',
           dragOver
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/30 bg-background hover:border-primary/50 hover:bg-muted/30',
@@ -80,8 +80,10 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
 
         {selectedFile ? (
           <>
-            <FileIcon className="h-8 w-8 text-primary" />
-            <p className="text-sm font-medium text-center break-all px-2">{selectedFile.name}</p>
+            <FileIcon className="h-8 w-8 text-primary shrink-0" />
+            <p className="text-sm font-medium text-center break-all px-2 max-w-2xl">
+              {selectedFile.name}
+            </p>
             <p className="text-xs text-muted-foreground">
               {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
             </p>
@@ -113,7 +115,7 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
             >
               Chọn file
             </Button>
-            <p className="text-[10px] text-muted-foreground text-center max-w-xs mt-1">
+            <p className="text-[10px] text-muted-foreground text-center max-w-md mt-1">
               PDF, Word, ảnh, Excel, PowerPoint, âm thanh, video và nhiều định dạng khác
             </p>
           </>

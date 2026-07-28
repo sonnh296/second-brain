@@ -3,6 +3,8 @@ export interface SourceChunk {
   chunk_index: number
   chunk_text: string
   score?: number
+  document_id?: string
+  file_type?: string
 }
 
 const LANGUAGE_RULE = `- Luôn trả lời bằng cùng ngôn ngữ với câu hỏi mới nhất của người dùng. Nếu họ dùng tiếng Việt, trả lời hoàn toàn bằng tiếng Việt tự nhiên.

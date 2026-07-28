@@ -19,6 +19,8 @@ import {
   Folder as FolderIcon,
   FolderPlus,
   ChevronLeft,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +30,8 @@ import { DocumentPreviewPanel } from '@/components/documents/document-preview-pa
 import { NoteModal } from '@/components/documents/note-modal'
 import { FileDropzone } from '@/components/documents/file-dropzone'
 import { TagManager } from '@/components/documents/tag-manager'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Textarea } from '@/components/ui/textarea'
 import {
   FolderGridItem,
   FolderListItem,
@@ -124,6 +128,7 @@ function FileIcon({ type, size = 'md' }: { type: string; size?: 'sm' | 'md' }) {
 }
 
 export default function DocumentsPage() {
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [documents, setDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -164,6 +169,10 @@ export default function DocumentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortBy>('date')
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [trashMode, setTrashMode] = useState(false)
+  const [trashDocs, setTrashDocs] = useState<Document[]>([])
+  const [trashLoading, setTrashLoading] = useState(false)
 
   const fetchTags = useCallback(async () => {
     const res = await fetch('/api/tags')
@@ -242,7 +251,12 @@ export default function DocumentsPage() {
   }
 
   async function deleteFolder(folderId: string) {
-    if (!confirm('Xóa thư mục này? Tài liệu bên trong sẽ chuyển về gốc.')) return
+    const ok = await confirm({
+      title: 'Xóa thư mục?',
+      description: 'Tài liệu bên trong sẽ chuyển về thư mục gốc.',
+      confirmLabel: 'Xóa thư mục',
+    })
+    if (!ok) return
     await fetch(`/api/folders/${folderId}`, { method: 'DELETE' })
     if (currentFolderId === folderId) navigateToFolder(null)
     else await refreshFolderView(currentFolderId)
@@ -455,26 +469,91 @@ export default function DocumentsPage() {
     setReprocessingOcr(false)
   }
 
+  const fetchTrash = useCallback(async () => {
+    setTrashLoading(true)
+    const res = await fetch('/api/documents?trash=1')
+    if (res.ok) setTrashDocs(await res.json())
+    setTrashLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (trashMode) void fetchTrash()
+  }, [trashMode, fetchTrash])
+
+  async function restoreDoc(documentId: string) {
+    const res = await fetch(`/api/documents/${documentId}/restore`, { method: 'POST' })
+    if (res.ok) {
+      setTrashDocs((prev) => prev.filter((d) => d.id !== documentId))
+      await refreshFolderView(currentFolderId)
+    }
+  }
+
+  async function purgeDoc(documentId: string) {
+    const ok = await confirm({
+      title: 'Xóa vĩnh viễn?',
+      description: 'Không thể khôi phục sau khi xóa.',
+      confirmLabel: 'Xóa vĩnh viễn',
+    })
+    if (!ok) return
+    const res = await fetch(`/api/documents/${documentId}`, { method: 'DELETE' })
+    if (res.ok) {
+      setTrashDocs((prev) => prev.filter((d) => d.id !== documentId))
+    }
+  }
+
   async function handleDelete(documentId: string) {
-    if (!confirm('Xóa mục này? Không thể hoàn tác.')) return
+    const ok = await confirm({
+      title: 'Xóa mục này?',
+      description: 'Mục sẽ được chuyển vào thùng rác.',
+      confirmLabel: 'Xóa',
+    })
+    if (!ok) return
     await fetch(`/api/documents/${documentId}`, { method: 'DELETE' })
     if (selectedDoc?.id === documentId) closePreview()
     await refreshFolderView(currentFolderId)
   }
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar — type filter */}
-      <aside className="w-52 shrink-0 border-r bg-muted/20 flex flex-col">
-        <div className="p-3 border-b">
+    <div className="relative flex h-full">
+      {confirmDialog}
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Đóng bộ lọc"
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar — drawer on mobile */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-40 w-[min(16rem,85vw)] border-r bg-background flex flex-col
+          transition-transform duration-200 ease-out
+          md:static md:z-auto md:w-52 md:shrink-0 md:translate-x-0 md:bg-muted/20
+          ${sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'}
+        `}
+      >
+        <div className="p-3 border-b flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Loại tài liệu</p>
+          <button
+            type="button"
+            className="md:hidden h-7 w-7 rounded-md border border-input text-xs hover:bg-muted"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Đóng"
+          >
+            ✕
+          </button>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
           {SIDEBAR_TYPES.map((item) => (
             <button
               key={item.id}
               type="button"
-              onClick={() => setTypeFilter(item.id)}
+              onClick={() => {
+                setTypeFilter(item.id)
+                setSidebarOpen(false)
+              }}
               className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
                 typeFilter === item.id
                   ? 'bg-primary/10 text-primary font-medium'
@@ -501,7 +580,10 @@ export default function DocumentsPage() {
           <div className="space-y-0.5 max-h-32 overflow-y-auto">
             <button
               type="button"
-              onClick={() => setTagFilter('all')}
+              onClick={() => {
+                setTagFilter('all')
+                setSidebarOpen(false)
+              }}
               className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
                 tagFilter === 'all' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
               }`}
@@ -513,7 +595,10 @@ export default function DocumentsPage() {
               <button
                 key={tag.id}
                 type="button"
-                onClick={() => setTagFilter(tag.id)}
+                onClick={() => {
+                  setTagFilter(tag.id)
+                  setSidebarOpen(false)
+                }}
                 className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
                   tagFilter === tag.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
                 }`}
@@ -538,12 +623,35 @@ export default function DocumentsPage() {
             <option value="failed">Lỗi</option>
           </select>
         </div>
+        <div className="p-2 border-t">
+          <button
+            type="button"
+            onClick={() => {
+              setTrashMode((v) => !v)
+              setSidebarOpen(false)
+            }}
+            className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
+              trashMode ? 'bg-destructive/10 text-destructive font-medium' : 'text-foreground hover:bg-muted'
+            }`}
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="flex-1 text-left">Thùng rác</span>
+          </button>
+        </div>
       </aside>
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 w-full">
         {/* Toolbar */}
-        <div className="shrink-0 border-b bg-background px-4 py-3 flex flex-wrap items-center gap-3">
+        <div className="shrink-0 border-b bg-background px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            className="md:hidden h-9 w-9 shrink-0 rounded-md border border-input bg-background hover:bg-muted text-sm"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Mở bộ lọc"
+          >
+            ☰
+          </button>
           {currentFolderId && (
             <Button
               size="sm"
@@ -558,7 +666,7 @@ export default function DocumentsPage() {
             </Button>
           )}
           <FolderBreadcrumb items={breadcrumb} onNavigate={navigateToFolder} />
-          <div className="relative flex-1 min-w-[160px] max-w-md">
+          <div className="relative flex-1 min-w-[140px] sm:min-w-[160px] max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={searchQuery}
@@ -630,19 +738,20 @@ export default function DocumentsPage() {
 
         {showUploadPanel && (
           <div className="shrink-0 border-b bg-muted/30 px-4 py-4">
-            <form onSubmit={handleUpload} className="flex flex-col gap-3 max-w-xl">
+            <form onSubmit={handleUpload} className="flex w-full flex-col gap-4">
               <FileDropzone
                 disabled={uploading}
                 selectedFile={selectedFile}
                 onFileSelect={setSelectedFile}
               />
-              <div>
+              <div className="w-full">
                 <Label className="text-xs">Mô tả (tuỳ chọn)</Label>
-                <Input
+                <Textarea
                   value={uploadDescription}
                   onChange={(e) => setUploadDescription(e.target.value)}
-                  placeholder="Mô tả ngắn..."
-                  className="mt-1 h-9 text-sm"
+                  placeholder="Thêm mô tả ngắn để dễ tìm lại tài liệu sau này..."
+                  rows={2}
+                  className="mt-1.5 w-full resize-y text-sm min-h-[4.5rem]"
                 />
               </div>
               <div className="flex gap-2">
@@ -656,6 +765,7 @@ export default function DocumentsPage() {
                   onClick={() => {
                     setShowUploadPanel(false)
                     setSelectedFile(null)
+                    setUploadDescription('')
                     setUploadError('')
                   }}
                 >
@@ -668,8 +778,69 @@ export default function DocumentsPage() {
         )}
 
         {/* File area + preview split */}
-        <div className="flex-1 flex min-h-0 overflow-hidden">
-          <div className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-4 ${selectedDoc ? '' : ''}`}>
+        <div className="flex-1 flex min-h-0 overflow-hidden relative">
+          <div
+            className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 ${
+              selectedDoc ? 'hidden sm:block' : ''
+            }`}
+          >
+            {trashMode ? (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                    Thùng rác · {trashDocs.length} mục
+                  </h2>
+                  <p className="text-xs text-muted-foreground">Tự xóa vĩnh viễn sau 30 ngày</p>
+                </div>
+                {trashLoading ? (
+                  <p className="text-sm text-muted-foreground">Đang tải...</p>
+                ) : trashDocs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                    <Trash2 className="h-12 w-12 mb-3 opacity-40" />
+                    <p className="text-sm">Thùng rác trống</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {trashDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                      >
+                        <FileIcon type={doc.file_type} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm truncate">{doc.filename}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Đã xóa{' '}
+                            {doc.deleted_at
+                              ? new Date(doc.deleted_at).toLocaleDateString('vi-VN')
+                              : ''}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          onClick={() => restoreDoc(doc.id)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                          Khôi phục
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 text-destructive hover:text-destructive"
+                          onClick={() => purgeDoc(doc.id)}
+                        >
+                          Xóa vĩnh viễn
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+            <>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-medium">
                 {breadcrumb[breadcrumb.length - 1]?.name ?? 'Gốc'} · {folders.length} thư mục ·{' '}
@@ -747,10 +918,13 @@ export default function DocumentsPage() {
                 )}
               </>
             )}
+            </>
+            )}
           </div>
 
-          {/* Preview panel — fixed right */}
+          {/* Preview panel — full screen on mobile */}
           {selectedDoc && (
+            <div className="absolute inset-0 z-20 sm:static sm:z-auto flex min-h-0 bg-background">
             <DocumentPreviewPanel
               doc={selectedDoc}
               preview={preview}
@@ -784,6 +958,7 @@ export default function DocumentsPage() {
               }
               onDelete={() => handleDelete(selectedDoc.id)}
             />
+            </div>
           )}
         </div>
       </div>

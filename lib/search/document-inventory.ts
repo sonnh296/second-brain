@@ -33,12 +33,23 @@ export async function searchDocumentInventory(
 
   const keywords = extractSearchKeywords(query)
 
-  const { data: docs, error } = await supabase
+  let { data: docs, error } = await supabase
     .from('documents')
     .select('id, filename, description, file_type, chunk_count')
     .eq('user_id', userId)
     .eq('status', 'done')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
+
+  // Migration 015 chưa chạy → bỏ filter deleted_at
+  if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
+    ;({ data: docs, error } = await supabase
+      .from('documents')
+      .select('id, filename, description, file_type, chunk_count')
+      .eq('user_id', userId)
+      .eq('status', 'done')
+      .order('created_at', { ascending: false }))
+  }
 
   if (error || !docs?.length) return []
 
@@ -48,6 +59,8 @@ export async function searchDocumentInventory(
   return matched.map((d) => ({
     filename: d.filename,
     chunk_index: 0,
+    document_id: d.id,
+    file_type: d.file_type,
     chunk_text: [
       `Tên file: ${d.filename}`,
       `Loại: ${d.file_type}`,
@@ -64,13 +77,24 @@ export async function listUserDocumentCatalog(
   supabase: SupabaseClient,
   userId: string
 ): Promise<SourceChunk[]> {
-  const { data: docs } = await supabase
+  let { data: docs, error } = await supabase
     .from('documents')
     .select('filename, file_type, chunk_count')
     .eq('user_id', userId)
     .eq('status', 'done')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(30)
+
+  if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
+    ;({ data: docs } = await supabase
+      .from('documents')
+      .select('filename, file_type, chunk_count')
+      .eq('user_id', userId)
+      .eq('status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(30))
+  }
 
   if (!docs?.length) return []
 

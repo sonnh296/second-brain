@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { flattenDocumentTags } from '@/lib/db/document-tags'
+import { logger } from '@/lib/logger'
 
 const DOCUMENT_SELECT = `
+  id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, extracted_content, ocr_text, deleted_at, created_at,
+  document_tags (
+    tags (id, name, color)
+  )
+`
+
+const DOCUMENT_SELECT_LEGACY = `
   id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, extracted_content, ocr_text, created_at,
   document_tags (
     tags (id, name, color)
@@ -15,6 +23,14 @@ function parseFolderId(raw: string | null): string | null | undefined {
   return raw
 }
 
+function isMissingDeletedAtColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === '42703' ||
+    (typeof error.message === 'string' && error.message.includes('deleted_at'))
+  )
+}
+
 export async function GET(req: NextRequest) {
   const supabase = await createServerSupabaseClient()
   const {
@@ -25,29 +41,70 @@ export async function GET(req: NextRequest) {
   }
 
   const folderId = parseFolderId(req.nextUrl.searchParams.get('folder_id'))
+  const trashView = req.nextUrl.searchParams.get('trash') === '1'
 
-  let query = supabase
-    .from('documents')
-    .select(DOCUMENT_SELECT)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+  async function runQuery(withSoftDelete: boolean) {
+    let query = supabase
+      .from('documents')
+      .select(withSoftDelete ? DOCUMENT_SELECT : DOCUMENT_SELECT_LEGACY)
+      .eq('user_id', user!.id)
 
-  if (folderId !== undefined) {
-    query = folderId === null ? query.is('folder_id', null) : query.eq('folder_id', folderId)
+    if (withSoftDelete) {
+      if (trashView) {
+        query = query.not('deleted_at', 'is', null).order('deleted_at', { ascending: false })
+      } else {
+        query = query.is('deleted_at', null).order('created_at', { ascending: false })
+        if (folderId !== undefined) {
+          query = folderId === null ? query.is('folder_id', null) : query.eq('folder_id', folderId)
+        }
+      }
+    } else {
+      if (trashView) {
+        // Soft-delete column chưa có → thùng rác trống
+        return { data: [] as unknown[], error: null }
+      }
+      query = query.order('created_at', { ascending: false })
+      if (folderId !== undefined) {
+        query = folderId === null ? query.is('folder_id', null) : query.eq('folder_id', folderId)
+      }
+    }
+
+    return query
   }
 
-  const { data, error } = await query
+  let { data, error } = await runQuery(true)
+
+  if (isMissingDeletedAtColumn(error)) {
+    logger.warn('documents.deleted_at missing — falling back until migration 015/018 is applied', {
+      userId: user.id,
+      message: error?.message,
+    })
+    ;({ data, error } = await runQuery(false))
+  }
 
   if (error) {
-    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
+    logger.error('Failed to fetch documents', {
+      err: error,
+      code: error.code,
+      message: error.message,
+      trashView,
+      folderId,
+      userId: user.id,
+    })
+    return NextResponse.json(
+      { error: 'Failed to fetch documents', detail: error.message },
+      { status: 500 }
+    )
   }
 
   const documents = (data ?? []).map((doc) => {
     const { document_tags, ...rest } = doc as typeof doc & {
       document_tags?: Parameters<typeof flattenDocumentTags>[0]
+      deleted_at?: string | null
     }
     return {
       ...rest,
+      deleted_at: rest.deleted_at ?? null,
       tags: flattenDocumentTags(document_tags),
     }
   })
