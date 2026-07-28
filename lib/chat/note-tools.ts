@@ -263,33 +263,79 @@ export function buildNoteTools(ctx: NoteToolsContext) {
 
     search_documents: tool({
       description:
-        'Tìm tài liệu (mọi loại file: pdf, ảnh, docx, note...) theo tên. Dùng trước khi đổi tên/di chuyển/gắn tag để lấy đúng document_id.',
+        'Tìm tài liệu (mọi loại file: pdf, ảnh, docx, note...) theo tên/mô tả. Dùng trước khi đổi tên/di chuyển/gắn tag. Nếu không biết tên chính xác, truyền query rỗng hoặc "*" để lấy danh sách file gần đây. KHÔNG tìm bằng tên MỚI mà user muốn đặt.',
       parameters: z.object({
-        query: z.string().min(1).max(200).describe('Từ khóa trong tên file'),
+        query: z
+          .string()
+          .max(200)
+          .optional()
+          .default('')
+          .describe(
+            'Từ khóa trong tên/mô tả hiện tại của file. Để trống hoặc "*" nếu cần liệt kê file gần đây.'
+          ),
       }),
       execute: async ({ query }) => {
-        const term = sanitizeSearchTerm(query)
-        let builder = supabase
-          .from('documents')
-          .select('id, filename, file_type, folder_id, created_at')
-          .eq('user_id', userId)
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .limit(10)
+        const term = sanitizeSearchTerm(query === '*' ? '' : query)
+
+        async function fetchRecent(limit = 15) {
+          return supabase
+            .from('documents')
+            .select('id, filename, file_type, folder_id, description, created_at')
+            .eq('user_id', userId)
+            .is('deleted_at', null)
+            .order('created_at', { ascending: false })
+            .limit(limit)
+        }
+
+        let docs: {
+          id: string
+          filename: string
+          file_type: string
+          folder_id: string | null
+          description: string | null
+          created_at: string
+        }[] = []
+        let matchedByQuery = false
+
         if (term) {
-          builder = builder.ilike('filename', `%${term}%`)
+          const { data, error } = await supabase
+            .from('documents')
+            .select('id, filename, file_type, folder_id, description, created_at')
+            .eq('user_id', userId)
+            .is('deleted_at', null)
+            .or(`filename.ilike.%${term}%,description.ilike.%${term}%`)
+            .order('created_at', { ascending: false })
+            .limit(15)
+          if (error) {
+            logger.error('search_documents failed', { err: error, userId })
+            return { error: 'Không tìm kiếm được, thử lại sau.' }
+          }
+          docs = data ?? []
+          matchedByQuery = docs.length > 0
         }
-        const { data: docs, error } = await builder
-        if (error) {
-          logger.error('search_documents failed', { err: error, userId })
-          return { error: 'Không tìm kiếm được, thử lại sau.' }
+
+        if (docs.length === 0) {
+          const { data, error } = await fetchRecent()
+          if (error) {
+            logger.error('search_documents recent failed', { err: error, userId })
+            return { error: 'Không tìm kiếm được, thử lại sau.' }
+          }
+          docs = data ?? []
         }
+
         return {
-          documents: (docs ?? []).map((d) => ({
+          matched_by_query: matchedByQuery,
+          hint: matchedByQuery
+            ? undefined
+            : term
+              ? `Không khớp tên "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
+              : 'Danh sách file gần đây.',
+          documents: docs.map((d) => ({
             document_id: d.id,
             filename: d.filename,
             file_type: d.file_type,
             folder_id: d.folder_id,
+            description: d.description,
           })),
         }
       },
@@ -363,7 +409,14 @@ export function buildNoteTools(ctx: NoteToolsContext) {
           .single()
 
         if (error || !action) {
-          return { error: 'Không tạo được đề xuất.' }
+          logger.error('propose_rename_document failed', {
+            err: error,
+            userId,
+            documentId: document_id,
+          })
+          return {
+            error: 'Không tạo được đề xuất đổi tên. Thử lại hoặc đổi tên trong Kho dữ liệu.',
+          }
         }
 
         onPendingAction({
@@ -597,6 +650,9 @@ Bạn có thể quản lý ghi chú và tài liệu của người dùng qua cá
 
 Quy tắc an toàn:
 - Không bao giờ đoán document_id, folder_id, tag_id — phải lấy từ tool tương ứng.
+- Khi đổi tên: search bằng tên HIỆN TẠI (hoặc từ khóa mô tả), KHÔNG search bằng tên mới. Ví dụ user nói "đổi báo cáo.pdf thành abc" → search "báo cáo" chứ không search "abc".
+- Nếu user không nêu rõ file nào, gọi search_documents với query rỗng để lấy danh sách gần đây rồi hỏi chọn.
+- Không kết luận "không có tài liệu trong kho" nếu chưa gọi search_documents/search_notes.
 - Nếu tìm thấy nhiều kết quả khớp, hỏi lại người dùng chọn cái nào trước khi đề xuất.
 - Mỗi lượt chỉ đề xuất tối đa 3 thao tác.
 - Sau khi tạo đề xuất, tóm tắt ngắn gọn và nhắc người dùng bấm nút Xác nhận.

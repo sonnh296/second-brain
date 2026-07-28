@@ -12,9 +12,10 @@ import {
   buildGeneralPrompt,
   buildKnowledgeNoContextPrompt,
   buildConversationalPrompt,
+  buildDocumentManagementPrompt,
   resolveDisplayFilename,
 } from '@/lib/ai/prompt'
-import { isGreeting, isDocumentInventoryQuery } from '@/lib/ai/query-intent'
+import { isGreeting, isDocumentInventoryQuery, isDocumentManagementQuery } from '@/lib/ai/query-intent'
 import { parseCitationsFromResponse } from '@/lib/ai/citations'
 import { rerankChunks, RERANK_CANDIDATES } from '@/lib/ai/rerank'
 import { hybridSearch } from '@/lib/search/hybrid'
@@ -132,10 +133,15 @@ export async function POST(req: NextRequest) {
   let usedKnowledge = false
   let noContext = false
   let conversational = false
+  let documentManagement = false
 
   if (mode === 'knowledge') {
     if (isGreeting(message)) {
       conversational = true
+    } else if (isDocumentManagementQuery(message)) {
+      // Skip RAG — rename/move/tag/note tools need Postgres search, not chunk retrieval.
+      // Running RAG here causes lag and a misleading "no documents" system prompt.
+      documentManagement = true
     } else {
       const questionVector = await embedSingle(message, {
         userId,
@@ -243,14 +249,16 @@ export async function POST(req: NextRequest) {
 
   const systemPrompt = conversational
     ? buildConversationalPrompt()
-    : usedKnowledge
-      ? buildSystemPrompt(sources)
-      : noContext
-        ? buildKnowledgeNoContextPrompt()
-        : buildGeneralPrompt()
+    : documentManagement
+      ? buildDocumentManagementPrompt()
+      : usedKnowledge
+        ? buildSystemPrompt(sources)
+        : noContext
+          ? buildKnowledgeNoContextPrompt()
+          : buildGeneralPrompt()
 
   const streamData = new StreamData()
-  if (noContext && !conversational) {
+  if (noContext && !conversational && !documentManagement) {
     streamData.append({
       no_context: true,
       message:
@@ -258,11 +266,13 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  let pendingActionCount = 0
   const noteTools = buildNoteTools({
     supabase,
     userId,
     sessionId: session_id,
     onPendingAction: (action) => {
+      pendingActionCount += 1
       streamData.append({ pending_action: { ...action } })
     },
   })
@@ -298,7 +308,13 @@ export async function POST(req: NextRequest) {
     },
     onFinish: async ({ text, usage }) => {
       try {
-        const { content, citedSources } = parseCitationsFromResponse(text, sources)
+        // Tool-only turns often return empty text; keep a visible reply when proposals exist.
+        const rawText =
+          text.trim() ||
+          (pendingActionCount > 0
+            ? 'Đã tạo đề xuất. Vui lòng bấm **Xác nhận** trong thẻ bên dưới để áp dụng.'
+            : '')
+        const { content, citedSources } = parseCitationsFromResponse(rawText, sources)
 
         const chatTokens = fromAiSdkUsage(usage)
         await logUsage({
@@ -306,7 +322,7 @@ export async function POST(req: NextRequest) {
           purpose: 'chat',
           model: modelId,
           ...chatTokens,
-          metadata: { session_id, mode },
+          metadata: { session_id, mode, document_management: documentManagement },
         })
 
         // Push citations to the client immediately so badges render without a reload
@@ -369,19 +385,21 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const { error: asstErr } = await supabase.from('messages').insert({
-          session_id,
-          role: 'assistant',
-          content,
-          cited_sources: citedSources,
-        })
-
-        if (asstErr) {
-          logger.error('Failed to persist assistant message', {
-            err: asstErr,
-            userId,
-            sessionId: session_id,
+        if (content.trim()) {
+          const { error: asstErr } = await supabase.from('messages').insert({
+            session_id,
+            role: 'assistant',
+            content,
+            cited_sources: citedSources,
           })
+
+          if (asstErr) {
+            logger.error('Failed to persist assistant message', {
+              err: asstErr,
+              userId,
+              sessionId: session_id,
+            })
+          }
         }
 
         if (

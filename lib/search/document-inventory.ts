@@ -13,6 +13,7 @@ interface DocumentRow {
 function normalize(value: string): string {
   return value
     .toLowerCase()
+    .replace(/đ/g, 'd')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
 }

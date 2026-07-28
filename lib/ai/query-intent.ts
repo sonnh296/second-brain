@@ -14,6 +14,34 @@ const INVENTORY_PHRASES = [
   'knowledge base',
 ]
 
+/** Document management via chat tools — skip RAG retrieval for these. */
+const MANAGEMENT_PHRASES = [
+  'doi ten',
+  'rename',
+  'dat ten',
+  'thay ten',
+  'di chuyen',
+  'chuyen vao',
+  'chuyen file',
+  'move',
+  'gan tag',
+  'them tag',
+  'tag cho',
+  'xoa note',
+  'xoa ghi chu',
+  'sua note',
+  'sua ghi chu',
+  'cap nhat note',
+  'cap nhat ghi chu',
+  'tao note',
+  'tao ghi chu',
+  'viet note',
+  'viet ghi chu',
+  'khoi phuc note',
+  'khoi phuc ghi chu',
+  'restore note',
+]
+
 const STOP_WORDS = new Set([
   'tôi',
   'toi',
@@ -61,6 +89,7 @@ const STOP_WORDS = new Set([
 function normalizeQuery(text: string): string {
   return text
     .toLowerCase()
+    .replace(/đ/g, 'd')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
 }
@@ -73,6 +102,15 @@ export function isDocumentInventoryQuery(text: string): boolean {
   const t = normalizeQuery(text.trim())
   if (INVENTORY_PHRASES.some((p) => t.includes(p))) return true
   return /\bco\b.+\bkhong\b\s*[?.!]*$/i.test(t)
+}
+
+/**
+ * True when the user is asking to create/edit/rename/move/tag/delete documents
+ * via chat tools — RAG chunk search is irrelevant and can mislead the model.
+ */
+export function isDocumentManagementQuery(text: string): boolean {
+  const t = normalizeQuery(text.trim())
+  return MANAGEMENT_PHRASES.some((p) => t.includes(p))
 }
 
 /** Keywords for filename / description matching (e.g. ielts, startup). */
