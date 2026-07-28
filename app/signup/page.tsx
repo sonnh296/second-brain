@@ -9,7 +9,7 @@ import { PasswordInput } from '@/components/auth/password-input'
 import { GoogleAuthButton } from '@/components/auth/google-auth-button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 
 export default function SignupPage() {
   const [username, setUsername] = useState('')
@@ -67,9 +67,9 @@ export default function SignupPage() {
         {success ? (
           <div className="space-y-4">
             <p className="text-sm text-emerald-600 leading-relaxed">{success}</p>
-            <Button asChild className="w-full h-10">
-              <Link href="/login">Đến trang đăng nhập</Link>
-            </Button>
+            <Link href="/login" className={buttonVariants({ className: 'w-full h-10' })}>
+              Đến trang đăng nhập
+            </Link>
           </div>
         ) : (
           <form onSubmit={handleSignup} className="space-y-4">
