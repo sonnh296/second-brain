@@ -1,4 +1,5 @@
 import * as fs from 'fs/promises'
+import * as os from 'os'
 import * as path from 'path'
 import { createHash } from 'crypto'
 import { v5 as uuidv5 } from 'uuid'
@@ -254,7 +255,10 @@ export async function runIngestionPipeline(
   userId: string,
   filename: string
 ): Promise<void> {
-  const tempPath = fileType === 'note' ? null : path.join('/tmp', `${documentId}.${fileType}`)
+  // os.tmpdir() respects TMPDIR — on the server this must point to disk,
+  // because /tmp is a small RAM-backed tmpfs that large videos would fill.
+  const tempPath =
+    fileType === 'note' ? null : path.join(os.tmpdir(), `${documentId}.${fileType}`)
 
   try {
     const supabase = createServiceSupabaseClient()

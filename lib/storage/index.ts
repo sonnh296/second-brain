@@ -3,8 +3,11 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Upload } from '@aws-sdk/lib-storage'
 import { Readable } from 'stream'
 import * as fs from 'fs'
@@ -132,6 +135,45 @@ export async function copyObject(sourceKey: string, destKey: string): Promise<vo
       Key: destKey,
     })
   )
+}
+
+/** Presigned PUT URL so the browser can upload directly to R2 (bypasses the server). */
+export async function presignPutUrl(
+  key: string,
+  contentType: string,
+  expiresInSeconds = 3600
+): Promise<string> {
+  return getSignedUrl(
+    getS3Client(),
+    new PutObjectCommand({ Bucket: BUCKET(), Key: key, ContentType: contentType }),
+    { expiresIn: expiresInSeconds }
+  )
+}
+
+/** Object metadata, or null if the key does not exist. */
+export async function headObject(key: string): Promise<{ size: number } | null> {
+  try {
+    const res = await getS3Client().send(
+      new HeadObjectCommand({ Bucket: BUCKET(), Key: key })
+    )
+    return { size: res.ContentLength ?? 0 }
+  } catch (err) {
+    const name = (err as { name?: string }).name
+    if (name === 'NotFound' || name === 'NoSuchKey' || name === '404') return null
+    throw err
+  }
+}
+
+/** First bytes of an object (for magic-byte validation after direct upload). */
+export async function getObjectHeaderBytes(key: string, length = 512): Promise<Buffer> {
+  const res = await getS3Client().send(
+    new GetObjectCommand({ Bucket: BUCKET(), Key: key, Range: `bytes=0-${length - 1}` })
+  )
+  const chunks: Buffer[] = []
+  for await (const chunk of res.Body as Readable) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
 }
 
 export async function deleteObject(key: string): Promise<void> {

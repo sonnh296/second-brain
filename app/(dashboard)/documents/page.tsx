@@ -132,6 +132,7 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState('')
   const [showUploadPanel, setShowUploadPanel] = useState(false)
   const [uploadDescription, setUploadDescription] = useState('')
@@ -306,24 +307,78 @@ export default function DocumentsPage() {
     return counts
   }, [documents])
 
+  function putToR2WithProgress(
+    url: string,
+    file: File,
+    contentType: string,
+    onProgress: (percent: number) => void
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('PUT', url)
+      xhr.setRequestHeader('Content-Type', contentType)
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve()
+        else reject(new Error(`Tải lên kho lưu trữ thất bại (HTTP ${xhr.status})`))
+      }
+      xhr.onerror = () => reject(new Error('Mất kết nối khi tải lên kho lưu trữ'))
+      xhr.send(file)
+    })
+  }
+
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedFile) return
     setUploading(true)
     setUploadError('')
-    const formData = new FormData()
-    formData.append('file', selectedFile)
-    formData.append('filename', selectedFile.name)
-    if (uploadDescription.trim()) formData.append('description', uploadDescription.trim())
-    if (currentFolderId) formData.append('folder_id', currentFolderId)
-    const res = await fetch('/api/upload', { method: 'POST', body: formData })
-    const data = await res.json()
-    if (!res.ok) {
-      setUploadError(data.error ?? 'Upload failed')
+    setUploadProgress(0)
+
+    try {
+      // 1. Presign: create the record + get a direct-to-R2 upload URL
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: selectedFile.name,
+          size: selectedFile.size,
+          description: uploadDescription.trim() || undefined,
+          folder_id: currentFolderId ?? undefined,
+        }),
+      })
+      const presign = await presignRes.json()
+      if (!presignRes.ok) {
+        throw new Error(presign.error ?? 'Upload failed')
+      }
+
+      // 2. Upload straight to R2 — the file never passes through our server
+      await putToR2WithProgress(
+        presign.upload_url,
+        selectedFile,
+        presign.content_type,
+        setUploadProgress
+      )
+
+      // 3. Complete: server verifies the object and queues processing
+      const completeRes = await fetch('/api/upload/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: presign.document_id }),
+      })
+      const complete = await completeRes.json()
+      if (!completeRes.ok) {
+        throw new Error(complete.error ?? 'Upload failed')
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
       setUploading(false)
       return
     }
+
     setUploading(false)
+    setUploadProgress(null)
     setUploadDescription('')
     setSelectedFile(null)
     setShowUploadPanel(false)
@@ -754,6 +809,20 @@ export default function DocumentsPage() {
                   className="mt-1.5 w-full resize-y text-sm min-h-[4.5rem]"
                 />
               </div>
+              {uploading && uploadProgress !== null && (
+                <div className="w-full">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                    <span>{uploadProgress < 100 ? 'Đang tải lên...' : 'Đang hoàn tất...'}</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button type="submit" size="sm" disabled={uploading || !selectedFile}>
                   {uploading ? 'Đang upload...' : 'Tải lên'}
