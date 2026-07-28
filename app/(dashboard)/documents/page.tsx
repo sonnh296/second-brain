@@ -38,7 +38,7 @@ import {
   FolderBreadcrumb,
 } from '@/components/documents/folder-items'
 import { useDocumentPolling } from '@/hooks/use-document-polling'
-import { TYPE_LABELS, isImageType, isTranscribableType } from '@/lib/upload/file-types'
+import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
 import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
 
 type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
@@ -381,12 +381,21 @@ export default function DocumentsPage() {
         setUploadProgress
       )
 
-      // 3. Complete: server verifies the object and queues processing
-      const completeRes = await fetch('/api/upload/complete', {
+      // 3. Complete: server verifies the object and queues processing (transcribe once)
+      let completeRes = await fetch('/api/upload/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ document_id: presign.document_id }),
       })
+      if (!completeRes.ok) {
+        // One retry — R2 head can briefly lag after a large PUT
+        await new Promise((r) => setTimeout(r, 1500))
+        completeRes = await fetch('/api/upload/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: presign.document_id }),
+        })
+      }
       const complete = await completeRes.json()
       if (!completeRes.ok) {
         throw new Error(complete.error ?? 'Upload failed')
@@ -471,37 +480,8 @@ export default function DocumentsPage() {
     setPreviewLoading(true)
     setPreview(null)
     const res = await fetch(`/api/documents/${doc.id}/preview`)
-    const previewData = res.ok ? await res.json() : null
-    if (previewData) setPreview(previewData)
+    if (res.ok) setPreview(await res.json())
     setPreviewLoading(false)
-
-    // Media marked done without a transcript (e.g. processed before transcription
-    // was enabled) — automatically re-queue subtitle generation, no button needed.
-    const needsSubtitles =
-      isTranscribableType(doc.file_type) &&
-      doc.status === 'done' &&
-      !previewData?.content &&
-      doc.chunk_count === 0
-    if (needsSubtitles) {
-      const re = await fetch(`/api/documents/${doc.id}/reprocess`, { method: 'POST' })
-      if (re.ok) {
-        setSelectedDoc({ ...doc, status: 'pending', chunk_count: null })
-        setPreview({
-          ...(previewData ?? {
-            filename: doc.filename,
-            file_type: doc.file_type,
-            status: 'pending',
-            content: null,
-            preview_type: 'video',
-            viewer_url: `/api/documents/${doc.id}/download`,
-          }),
-          status: 'pending',
-          content: null,
-          message: 'Đang tự động tạo phụ đề...',
-        })
-        await refreshFolderView(currentFolderId)
-      }
-    }
   }
 
   function closePreview() {

@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger'
 /**
  * Step 2 of direct-to-R2 upload: the browser finished its PUT to R2.
  * Verify the object (exists, size, magic bytes), then enqueue ingestion.
+ * For video/audio, the worker transcribes once and saves the transcript to DB.
  */
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient()
@@ -43,7 +44,14 @@ export async function POST(req: NextRequest) {
   if (!doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
   }
-  if (doc.status !== 'pending' || doc.chunk_count != null) {
+
+  // Only block if already actively processed or finished with content.
+  // Allow pending (first complete) and failed (retry). chunk_count === 0 used to
+  // incorrectly block retries after a storage-only mark.
+  if (doc.status === 'processing') {
+    return NextResponse.json({ error: 'Tài liệu đang được xử lý' }, { status: 409 })
+  }
+  if (doc.status === 'done' && (doc.chunk_count ?? 0) > 0) {
     return NextResponse.json({ error: 'Tài liệu đã được xử lý' }, { status: 400 })
   }
 
@@ -67,7 +75,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File quá lớn' }, { status: 413 })
   }
 
-  // Same magic-byte validation as the legacy streaming upload path.
   const header = await getObjectHeaderBytes(doc.r2_key)
   const validation = detectAndValidateFileType(doc.filename, header)
   if (!validation.ok) {
@@ -81,18 +88,38 @@ export async function POST(req: NextRequest) {
 
   await supabase
     .from('documents')
-    .update({ file_size_bytes: head.size, file_type: validation.fileType })
+    .update({
+      file_size_bytes: head.size,
+      file_type: validation.fileType,
+      status: 'pending',
+      chunk_count: null,
+      error_message: null,
+    })
     .eq('id', doc.id)
 
-  await enqueueIngestionJob(
-    {
-      document_id: doc.id,
-      r2_key: doc.r2_key,
-      file_type: validation.fileType,
-      user_id: userId,
-    },
-    { force: true }
-  )
+  try {
+    await enqueueIngestionJob(
+      {
+        document_id: doc.id,
+        r2_key: doc.r2_key,
+        file_type: validation.fileType,
+        user_id: userId,
+      },
+      { force: true }
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Không xếp hàng xử lý được'
+    logger.error('Failed to enqueue ingestion after direct upload', {
+      err,
+      userId,
+      documentId: doc.id,
+    })
+    await supabase
+      .from('documents')
+      .update({ status: 'failed', error_message: `Queue error: ${message}` })
+      .eq('id', doc.id)
+    return NextResponse.json({ error: 'Không thể bắt đầu xử lý file' }, { status: 500 })
+  }
 
   logger.info('Direct upload completed, queued for ingestion', {
     userId,

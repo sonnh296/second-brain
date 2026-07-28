@@ -201,8 +201,8 @@ function SubtitlesPanel({
     return (
       <PreviewBody>
         <div className="p-4 text-sm text-muted-foreground space-y-1">
-          <p className="font-medium text-foreground">Đang tạo phụ đề...</p>
-          <p>Phụ đề sẽ hiện ở đây khi xử lý xong. Bạn vẫn xem được video ở tab Nội dung.</p>
+          <p className="font-medium text-foreground">Đang tạo phụ đề lần đầu...</p>
+          <p>Chỉ tạo một lần khi upload. Xong sẽ lưu vào hệ thống — mở lại không tạo lại.</p>
         </div>
       </PreviewBody>
     )
@@ -224,7 +224,11 @@ function SubtitlesPanel({
   return (
     <PreviewBody>
       <div className="p-4 text-sm text-muted-foreground">
-        <p>{preview?.message ?? 'Không có phụ đề'}</p>
+        <p>
+          {status === 'failed'
+            ? preview?.message ?? 'Tạo phụ đề thất bại'
+            : preview?.message ?? 'Không có phụ đề cho video này'}
+        </p>
       </div>
     </PreviewBody>
   )
