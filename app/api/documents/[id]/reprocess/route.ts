@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { enqueueIngestionJob } from '@/lib/queue'
-import { isImageType } from '@/lib/upload/file-types'
+import { isImageType, isTranscribableType } from '@/lib/upload/file-types'
 import { isOcrEnabled } from '@/lib/ingestion/ocr'
+import { isTranscriptionEnabled } from '@/lib/ingestion/transcribe'
 
 export async function POST(
   _req: NextRequest,
@@ -14,10 +15,6 @@ export async function POST(
   } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  if (!isOcrEnabled()) {
-    return NextResponse.json({ error: 'OCR chưa được bật (OCR_ENABLED=true)' }, { status: 400 })
   }
 
   const { id } = await params
@@ -33,8 +30,20 @@ export async function POST(
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
   }
 
-  if (!isImageType(doc.file_type)) {
-    return NextResponse.json({ error: 'Chỉ hỗ trợ quét lại ảnh' }, { status: 400 })
+  const isImage = isImageType(doc.file_type)
+  const isMedia = isTranscribableType(doc.file_type)
+
+  if (isImage && !isOcrEnabled()) {
+    return NextResponse.json({ error: 'OCR chưa được bật (OCR_ENABLED=true)' }, { status: 400 })
+  }
+  if (isMedia && !isTranscriptionEnabled()) {
+    return NextResponse.json(
+      { error: 'Chuyển giọng nói thành văn bản chưa được bật' },
+      { status: 400 }
+    )
+  }
+  if (!isImage && !isMedia) {
+    return NextResponse.json({ error: 'Chỉ hỗ trợ quét lại ảnh hoặc video/âm thanh' }, { status: 400 })
   }
 
   await supabase

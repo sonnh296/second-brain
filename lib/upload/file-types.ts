@@ -12,6 +12,9 @@ export const INDEXABLE_TYPES = new Set([
 
 export const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
 
+/** Video/audio types eligible for Whisper transcription before indexing. */
+export const TRANSCRIBABLE_TYPES = new Set(['mp3', 'wav', 'mp4', 'mov'])
+
 export const BLOCKED_EXTENSIONS = new Set([
   'exe',
   'bat',
@@ -150,6 +153,10 @@ export function isIndexableType(fileType: string): boolean {
 
 export function isImageType(fileType: string): boolean {
   return IMAGE_TYPES.has(fileType)
+}
+
+export function isTranscribableType(fileType: string): boolean {
+  return TRANSCRIBABLE_TYPES.has(fileType)
 }
 
 /** Types the browser can usually display inline (not force-download). */

@@ -9,7 +9,7 @@ import { StatusBadge, STATUS_LABELS } from '@/components/documents/document-grid
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import { FolderPicker } from '@/components/documents/folder-items'
 import { cn } from '@/lib/utils'
-import { isBrowserInlineType, isImageType } from '@/lib/upload/file-types'
+import { isBrowserInlineType, isImageType, isTranscribableType } from '@/lib/upload/file-types'
 import type { Document, Tag } from '@/lib/db/types'
 
 type DocStatus = Document['status']
@@ -134,12 +134,20 @@ function ContentPreview({
   if (['mp4', 'mov'].includes(fileType)) {
     return (
       <PreviewBody>
-        <div className="flex-1 min-h-0 p-4 flex items-center justify-center">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           <video
             src={viewerUrl}
             controls
-            className="w-full max-h-full rounded border bg-black"
+            className="w-full max-h-[min(50vh,420px)] rounded border bg-black"
           />
+          {preview?.content && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Phụ đề (AI)</p>
+              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
+                {preview.content}
+              </pre>
+            </div>
+          )}
         </div>
       </PreviewBody>
     )
@@ -148,8 +156,16 @@ function ContentPreview({
   if (['mp3', 'wav'].includes(fileType)) {
     return (
       <PreviewBody>
-        <div className="p-6 flex items-center justify-center">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-3">
           <audio src={viewerUrl} controls className="w-full" />
+          {preview?.content && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Phụ đề (AI)</p>
+              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
+                {preview.content}
+              </pre>
+            </div>
+          )}
         </div>
       </PreviewBody>
     )
@@ -358,7 +374,11 @@ export function DocumentPreviewPanel({
                   onClick={onReprocessOcr}
                   disabled={reprocessingOcr}
                 >
-                  {reprocessingOcr ? 'Đang quét lại...' : 'Quét lại OCR'}
+                  {reprocessingOcr
+                    ? 'Đang xử lý lại...'
+                    : isTranscribableType(doc.file_type)
+                      ? 'Tạo phụ đề (AI)'
+                      : 'Quét lại OCR'}
                 </Button>
               )}
               {onEditNote && (

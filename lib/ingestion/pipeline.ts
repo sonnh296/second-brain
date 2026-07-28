@@ -2,11 +2,12 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createHash } from 'crypto'
 import { v5 as uuidv5 } from 'uuid'
-import { isIndexableType } from '../upload/file-types'
+import { isIndexableType, isTranscribableType } from '../upload/file-types'
 import { parseFileWithPages, type PageOffset } from './parse'
 import { chunkText } from './chunk'
 import { embedBatch } from './embed'
 import { extractTextFromImage, isOcrEligibleType, isOcrEnabled } from './ocr'
+import { transcribeMediaFile, isTranscriptionEnabled } from './transcribe'
 import { upsertChunks, ensureCollection, deleteByDocument, listChunksByDocument } from '../vector'
 import { downloadToFile } from '../storage'
 import { createServiceSupabaseClient } from '../db/server'
@@ -260,7 +261,7 @@ export async function runIngestionPipeline(
 
     const { data: docRecord } = await supabase
       .from('documents')
-      .select('user_id, filename')
+      .select('user_id, filename, description')
       .eq('id', documentId)
       .single()
 
@@ -276,8 +277,9 @@ export async function runIngestionPipeline(
       .eq('id', documentId)
 
     const canOcr = isOcrEnabled() && isOcrEligibleType(fileType)
+    const canTranscribe = isTranscriptionEnabled() && isTranscribableType(fileType)
 
-    if (!isIndexableType(fileType) && !canOcr) {
+    if (!isIndexableType(fileType) && !canOcr && !canTranscribe) {
       await markStorageOnlyDone(supabase, documentId)
       logger.info('Storage-only file marked done (no indexing)', {
         documentId,
@@ -310,6 +312,22 @@ export async function runIngestionPipeline(
           userId,
           charCount: rawText.length,
         })
+      } else if (canTranscribe) {
+        const transcript = await transcribeMediaFile(tempPath!, { documentId, userId })
+        const description = docRecord.description?.trim()
+        if (!transcript.text && !description) {
+          // Silent video / no speech and no description — keep the file, just don't index it.
+          await markStorageOnlyDone(supabase, documentId)
+          logger.warn('Media transcribed to empty text, stored without indexing', {
+            documentId,
+            fileType,
+            userId,
+          })
+          return
+        }
+        rawText = [description ? `Mô tả: ${description}` : '', transcript.text]
+          .filter(Boolean)
+          .join('\n\n')
       } else {
         const parsed = await parseFileWithPages(tempPath!, fileType)
         rawText = parsed.text

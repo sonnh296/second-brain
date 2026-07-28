@@ -38,7 +38,7 @@ import {
   FolderBreadcrumb,
 } from '@/components/documents/folder-items'
 import { useDocumentPolling } from '@/hooks/use-document-polling'
-import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
+import { TYPE_LABELS, isImageType, isTranscribableType } from '@/lib/upload/file-types'
 import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
 
 type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
@@ -949,7 +949,11 @@ export default function DocumentsPage() {
               onSaveTags={saveTags}
               onFolderChange={setSelectedFolderId}
               onSaveFolder={saveFolder}
-              onReprocessOcr={isImageType(selectedDoc.file_type) ? reprocessOcr : undefined}
+              onReprocessOcr={
+                isImageType(selectedDoc.file_type) || isTranscribableType(selectedDoc.file_type)
+                  ? reprocessOcr
+                  : undefined
+              }
               reprocessingOcr={reprocessingOcr}
               onEditNote={
                 selectedDoc.file_type === 'note'
