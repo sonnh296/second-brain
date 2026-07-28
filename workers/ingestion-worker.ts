@@ -14,6 +14,7 @@ import type { DocumentCleanupJobData, IngestionJobData } from '../lib/queue'
 import { validateServerEnv } from '../lib/env'
 import { initSentry } from '../lib/sentry'
 import { logger } from '../lib/logger'
+import { recoverStuckMediaTranscription } from '../lib/ingestion/recover-stuck-media'
 
 validateServerEnv()
 initSentry()
@@ -106,8 +107,26 @@ async function runTrashPurge() {
 void runTrashPurge()
 const purgeTimer = setInterval(() => void runTrashPurge(), PURGE_INTERVAL_MS)
 
+// Recover media stuck without subtitles (e.g. complete missed after long R2 upload)
+const RECOVER_MEDIA_INTERVAL_MS = 60 * 1000
+
+async function runMediaRecovery() {
+  try {
+    const count = await recoverStuckMediaTranscription()
+    if (count > 0) {
+      logger.info('Media recovery pass finished', { recoveredCount: count })
+    }
+  } catch (err) {
+    logger.error('Media recovery pass failed', { err })
+  }
+}
+
+void runMediaRecovery()
+const mediaRecoverTimer = setInterval(() => void runMediaRecovery(), RECOVER_MEDIA_INTERVAL_MS)
+
 async function shutdown() {
   clearInterval(purgeTimer)
+  clearInterval(mediaRecoverTimer)
   await Promise.all([ingestionWorker.close(), cleanupWorker.close()])
   await redis.quit()
   process.exit(0)

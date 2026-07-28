@@ -335,8 +335,15 @@ export async function runIngestionPipeline(
         const transcript = await transcribeMediaFile(tempPath!, { documentId, userId })
         const description = docRecord.description?.trim()
         if (!transcript.text && !description) {
-          // Silent video / no speech and no description — keep the file, just don't index it.
-          await markStorageOnlyDone(supabase, documentId)
+          await supabase
+            .from('documents')
+            .update({
+              status: 'done',
+              chunk_count: 0,
+              error_message: 'Không có lời thoại trong video',
+              extracted_content: null,
+            })
+            .eq('id', documentId)
           logger.warn('Media transcribed to empty text, stored without indexing', {
             documentId,
             fileType,

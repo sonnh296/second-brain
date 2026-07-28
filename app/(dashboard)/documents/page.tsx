@@ -349,6 +349,32 @@ export default function DocumentsPage() {
     })
   }
 
+  async function waitForDocumentProcessing(
+    documentId: string,
+    onProgress?: (message: string) => void
+  ): Promise<void> {
+    const maxWaitMs = 10 * 60 * 1000
+    const start = Date.now()
+    while (Date.now() - start < maxWaitMs) {
+      const res = await fetch(`/api/documents/status?ids=${documentId}`)
+      if (!res.ok) break
+      const updates = (await res.json()) as Record<
+        string,
+        { status: string; error_message: string | null }
+      >
+      const update = updates[documentId]
+      if (!update) break
+      if (update.status === 'done') return
+      if (update.status === 'failed') {
+        throw new Error(update.error_message ?? 'Tạo phụ đề thất bại')
+      }
+      onProgress?.(
+        update.status === 'processing' ? 'Đang tạo phụ đề...' : 'Đang chờ xử lý...'
+      )
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+  }
+
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedFile) return
@@ -399,6 +425,12 @@ export default function DocumentsPage() {
       const complete = await completeRes.json()
       if (!completeRes.ok) {
         throw new Error(complete.error ?? 'Upload failed')
+      }
+
+      // Wait until worker finishes (transcribe once → save to DB)
+      const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name)
+      if (isMedia) {
+        await waitForDocumentProcessing(presign.document_id)
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed')
@@ -841,13 +873,17 @@ export default function DocumentsPage() {
               {uploading && uploadProgress !== null && (
                 <div className="w-full">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>{uploadProgress < 100 ? 'Đang tải lên...' : 'Đang hoàn tất...'}</span>
-                    <span>{uploadProgress}%</span>
+                    <span>
+                      {uploadProgress < 100
+                        ? 'Đang tải lên...'
+                        : 'Đang tạo phụ đề (một lần)...'}
+                    </span>
+                    <span>{uploadProgress < 100 ? `${uploadProgress}%` : '...'}</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className="h-full rounded-full bg-primary transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
+                      style={{ width: uploadProgress < 100 ? `${uploadProgress}%` : '100%' }}
                     />
                   </div>
                 </div>

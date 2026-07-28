@@ -3,16 +3,19 @@ module.exports = {
   apps: [
     {
       name: 'second-brain-web',
-      script: 'npm',
+      script: 'node_modules/.bin/next',
       args: 'start',
       cwd: __dirname,
+      node_args: '-r dotenv/config',
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
+        DOTENV_CONFIG_PATH: '.env.local',
         // /tmp is a ~1GB RAM-backed tmpfs on the server — keep temp files on disk
         TMPDIR: '/home/ec2-user/tmp',
       },
       instances: 1,
+      exec_mode: 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',

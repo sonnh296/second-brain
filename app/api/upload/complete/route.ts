@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { headObject, getObjectHeaderBytes, deleteObject } from '@/lib/storage'
-import { enqueueIngestionJob } from '@/lib/queue'
+import { enqueueIngestionJob, getIngestionQueue, ingestionJobId } from '@/lib/queue'
 import { MAX_FILE_SIZE_BYTES } from '@/lib/upload-limits'
 import { detectAndValidateFileType } from '@/lib/upload/validate-file'
 import { logger } from '@/lib/logger'
@@ -107,6 +107,13 @@ export async function POST(req: NextRequest) {
       },
       { force: true }
     )
+
+    const queue = getIngestionQueue()
+    const job = await queue.getJob(ingestionJobId(doc.id))
+    const state = job ? await job.getState() : null
+    if (!job || state === 'completed' || state === 'failed') {
+      throw new Error(`Job not queued (state=${state ?? 'missing'})`)
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Không xếp hàng xử lý được'
     logger.error('Failed to enqueue ingestion after direct upload', {
