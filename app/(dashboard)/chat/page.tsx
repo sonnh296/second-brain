@@ -363,6 +363,7 @@ export default function ChatPage() {
   const [pendingActions, setPendingActions] = useState<PendingChatAction[]>([])
   const [streamCitations, setStreamCitations] = useState<CitedSource[]>([])
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null)
   const [actionBusyId, setActionBusyId] = useState<string | null>(null)
   const [previewModal, setPreviewModal] = useState<PreviewModal>({ open: false })
   const [dragOver, setDragOver] = useState(false)
@@ -403,7 +404,10 @@ export default function ChatPage() {
       model: selectedModel,
       mode: chatMode,
     },
-    onError: (err) => console.error('[chat] Error:', err),
+    onError: (err) => {
+      console.error('[chat] Error:', err)
+      setChatError(err.message || 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.')
+    },
     onFinish: async () => {
       const session = activeSessionRef.current
       if (!session || isDraftSession(session)) return
@@ -593,6 +597,7 @@ export default function ChatPage() {
 
     setNoContextNotice(null)
     setStreamCitations([])
+    setChatError(null)
 
     const session = await ensurePersistedSession()
     if (!session) return
@@ -1013,6 +1018,19 @@ export default function ChatPage() {
                     onCancel={() => resolveAction(action, false)}
                   />
                 ))}
+                {chatError && (
+                  <div className="mb-2 flex items-start justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-1.5">
+                    <p className="text-xs text-destructive">{chatError}</p>
+                    <button
+                      type="button"
+                      className="text-xs text-destructive/80 hover:text-destructive"
+                      onClick={() => setChatError(null)}
+                      aria-label="Đóng lỗi"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {actionNotice && (
                   <div className="mb-2 flex items-start justify-between gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5">
                     <p className="text-xs text-muted-foreground">{actionNotice}</p>

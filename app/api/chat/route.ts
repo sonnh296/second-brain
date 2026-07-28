@@ -430,5 +430,19 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  return result.toDataStreamResponse({ data: streamData })
+  return result.toDataStreamResponse({
+    data: streamData,
+    getErrorMessage: (error) => {
+      logger.error('Chat stream error', { err: error, userId, sessionId: session_id })
+      if (error instanceof Error && error.message) {
+        // Avoid leaking internal stack; keep a short actionable message
+        const msg = error.message
+        if (/uuid|invalid|schema|tool/i.test(msg)) {
+          return 'Không xử lý được thao tác trên ghi chú/tài liệu. Thử mô tả rõ tên note và nội dung cần sửa.'
+        }
+        return msg.length > 200 ? 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.' : msg
+      }
+      return 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.'
+    },
+  })
 }

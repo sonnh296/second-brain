@@ -8,6 +8,12 @@ import { cleanupFailedUpload } from '@/lib/upload/cleanup-document'
 import { logger } from '@/lib/logger'
 
 const PREVIEW_LENGTH = 200
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+/** Prefer plain string in tool JSON Schema — Zod `.uuid()` adds format:uuid and
+ *  causes Anthropic/AI-SDK stream failures when the model emits a slightly-off id. */
+const IdSchema = z.string().min(1).max(80).describe('UUID lấy từ tool search/list')
 
 function preview(text: string): string {
   return text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text
@@ -16,6 +22,14 @@ function preview(text: string): string {
 /** Escape characters that break Supabase .or() ilike filters. */
 function sanitizeSearchTerm(q: string): string {
   return q.replace(/[%,()]/g, ' ').trim()
+}
+
+function parseId(raw: string, label: string): string | { error: string } {
+  const id = raw.trim()
+  if (!UUID_RE.test(id)) {
+    return { error: `${label} không hợp lệ. Gọi lại search/list để lấy đúng ID.` }
+  }
+  return id
 }
 
 export interface NoteToolsContext {
@@ -158,55 +172,67 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Đề xuất cập nhật nội dung/tiêu đề một ghi chú. KHÔNG thực thi ngay — người dùng phải bấm Xác nhận trong giao diện. Cần document_id chính xác từ search_notes.',
       parameters: z.object({
-        document_id: z.string().uuid().describe('ID ghi chú (lấy từ search_notes)'),
-        new_content: z.string().min(1).max(50000).describe('Nội dung mới (thay thế toàn bộ)'),
+        document_id: IdSchema.describe('ID ghi chú (lấy từ search_notes)'),
+        new_content: z
+          .string()
+          .min(1)
+          .max(20000)
+          .describe('Nội dung mới đầy đủ (thay thế toàn bộ). Giữ ngắn gọn nếu có thể.'),
         new_title: z.string().min(1).max(200).optional().describe('Tiêu đề mới (nếu đổi tên)'),
       }),
       execute: async ({ document_id, new_content, new_title }) => {
-        const doc = await findOwnedNote(document_id)
-        if (!doc || doc.deleted_at) {
-          return { error: 'Không tìm thấy ghi chú này.' }
-        }
-        if (doc.file_type !== 'note') {
-          return { error: 'Chỉ có thể sửa ghi chú (note), không sửa được file upload.' }
-        }
+        try {
+          const id = parseId(document_id, 'document_id')
+          if (typeof id !== 'string') return id
 
-        const { data: action, error } = await supabase
-          .from('chat_actions')
-          .insert({
-            user_id: userId,
-            session_id: sessionId,
+          const doc = await findOwnedNote(id)
+          if (!doc || doc.deleted_at) {
+            return { error: 'Không tìm thấy ghi chú này.' }
+          }
+          if (doc.file_type !== 'note') {
+            return { error: 'Chỉ có thể sửa ghi chú (note), không sửa được file upload.' }
+          }
+
+          const { data: action, error } = await supabase
+            .from('chat_actions')
+            .insert({
+              user_id: userId,
+              session_id: sessionId,
+              action_type: 'update_note',
+              document_id: id,
+              payload: {
+                new_content,
+                new_title: new_title ?? null,
+                old_title: doc.filename,
+                preview: preview(new_content),
+              },
+              status: 'pending',
+            })
+            .select('id')
+            .single()
+
+          if (error || !action) {
+            logger.error('propose_update_note failed', { err: error, userId, documentId: id })
+            return { error: 'Không tạo được đề xuất.' }
+          }
+
+          onPendingAction({
+            id: action.id,
             action_type: 'update_note',
-            document_id,
-            payload: {
-              new_content,
-              new_title: new_title ?? null,
-              old_title: doc.filename,
-              preview: preview(new_content),
-            },
-            status: 'pending',
+            document_id: id,
+            filename: new_title ?? doc.filename,
+            preview: preview(new_content),
           })
-          .select('id')
-          .single()
 
-        if (error || !action) {
-          logger.error('propose_update_note failed', { err: error, userId, documentId: document_id })
-          return { error: 'Không tạo được đề xuất.' }
-        }
-
-        onPendingAction({
-          id: action.id,
-          action_type: 'update_note',
-          document_id,
-          filename: new_title ?? doc.filename,
-          preview: preview(new_content),
-        })
-
-        return {
-          proposal_created: true,
-          action_id: action.id,
-          note_title: doc.filename,
-          message: 'Đề xuất đã tạo. Báo người dùng bấm nút Xác nhận trong giao diện để áp dụng.',
+          return {
+            proposal_created: true,
+            action_id: action.id,
+            note_title: doc.filename,
+            message: 'Đề xuất đã tạo. Báo người dùng bấm nút Xác nhận trong giao diện để áp dụng.',
+          }
+        } catch (err) {
+          logger.error('propose_update_note threw', { err, userId })
+          return { error: 'Lỗi khi tạo đề xuất sửa note. Thử lại.' }
         }
       },
     }),
@@ -215,48 +241,56 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Đề xuất xóa một ghi chú (chuyển vào thùng rác, khôi phục được). KHÔNG thực thi ngay — người dùng phải bấm Xác nhận. Cần document_id chính xác từ search_notes.',
       parameters: z.object({
-        document_id: z.string().uuid().describe('ID ghi chú (lấy từ search_notes)'),
+        document_id: IdSchema.describe('ID ghi chú (lấy từ search_notes)'),
       }),
       execute: async ({ document_id }) => {
-        const doc = await findOwnedNote(document_id)
-        if (!doc || doc.deleted_at) {
-          return { error: 'Không tìm thấy ghi chú này.' }
-        }
-        if (doc.file_type !== 'note') {
-          return { error: 'Chỉ có thể xóa ghi chú (note) qua chat, không xóa được file upload.' }
-        }
+        try {
+          const id = parseId(document_id, 'document_id')
+          if (typeof id !== 'string') return id
 
-        const { data: action, error } = await supabase
-          .from('chat_actions')
-          .insert({
-            user_id: userId,
-            session_id: sessionId,
+          const doc = await findOwnedNote(id)
+          if (!doc || doc.deleted_at) {
+            return { error: 'Không tìm thấy ghi chú này.' }
+          }
+          if (doc.file_type !== 'note') {
+            return { error: 'Chỉ có thể xóa ghi chú (note) qua chat, không xóa được file upload.' }
+          }
+
+          const { data: action, error } = await supabase
+            .from('chat_actions')
+            .insert({
+              user_id: userId,
+              session_id: sessionId,
+              action_type: 'delete_note',
+              document_id: id,
+              payload: { title: doc.filename, preview: preview(doc.note_content ?? '') },
+              status: 'pending',
+            })
+            .select('id')
+            .single()
+
+          if (error || !action) {
+            logger.error('propose_delete_note failed', { err: error, userId, documentId: id })
+            return { error: 'Không tạo được đề xuất.' }
+          }
+
+          onPendingAction({
+            id: action.id,
             action_type: 'delete_note',
-            document_id,
-            payload: { title: doc.filename, preview: preview(doc.note_content ?? '') },
-            status: 'pending',
+            document_id: id,
+            filename: doc.filename,
+            preview: preview(doc.note_content ?? ''),
           })
-          .select('id')
-          .single()
 
-        if (error || !action) {
-          logger.error('propose_delete_note failed', { err: error, userId, documentId: document_id })
-          return { error: 'Không tạo được đề xuất.' }
-        }
-
-        onPendingAction({
-          id: action.id,
-          action_type: 'delete_note',
-          document_id,
-          filename: doc.filename,
-          preview: preview(doc.note_content ?? ''),
-        })
-
-        return {
-          proposal_created: true,
-          action_id: action.id,
-          note_title: doc.filename,
-          message: 'Đề xuất xóa đã tạo. Báo người dùng bấm nút Xác nhận trong giao diện.',
+          return {
+            proposal_created: true,
+            action_id: action.id,
+            note_title: doc.filename,
+            message: 'Đề xuất xóa đã tạo. Báo người dùng bấm nút Xác nhận trong giao diện.',
+          }
+        } catch (err) {
+          logger.error('propose_delete_note threw', { err, userId })
+          return { error: 'Lỗi khi tạo đề xuất xóa note. Thử lại.' }
         }
       },
     }),
@@ -269,110 +303,128 @@ export function buildNoteTools(ctx: NoteToolsContext) {
           .string()
           .max(200)
           .optional()
-          .default('')
           .describe(
-            'Từ khóa trong tên/mô tả hiện tại của file. Để trống hoặc "*" nếu cần liệt kê file gần đây.'
+            'Từ khóa trong tên/mô tả hiện tại của file. Dùng "*" hoặc bỏ trống nếu cần liệt kê file gần đây.'
           ),
       }),
       execute: async ({ query }) => {
-        const term = sanitizeSearchTerm(query === '*' ? '' : query)
+        try {
+          const term = sanitizeSearchTerm(!query || query === '*' ? '' : query)
 
-        async function fetchRecent(limit = 15) {
-          return supabase
-            .from('documents')
-            .select('id, filename, file_type, folder_id, description, created_at')
-            .eq('user_id', userId)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-            .limit(limit)
-        }
-
-        let docs: {
-          id: string
-          filename: string
-          file_type: string
-          folder_id: string | null
-          description: string | null
-          created_at: string
-        }[] = []
-        let matchedByQuery = false
-
-        if (term) {
-          const { data, error } = await supabase
-            .from('documents')
-            .select('id, filename, file_type, folder_id, description, created_at')
-            .eq('user_id', userId)
-            .is('deleted_at', null)
-            .or(`filename.ilike.%${term}%,description.ilike.%${term}%`)
-            .order('created_at', { ascending: false })
-            .limit(15)
-          if (error) {
-            logger.error('search_documents failed', { err: error, userId })
-            return { error: 'Không tìm kiếm được, thử lại sau.' }
+          async function fetchRecent(limit = 15) {
+            return supabase
+              .from('documents')
+              .select('id, filename, file_type, folder_id, description, created_at')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+              .limit(limit)
           }
-          docs = data ?? []
-          matchedByQuery = docs.length > 0
-        }
 
-        if (docs.length === 0) {
-          const { data, error } = await fetchRecent()
-          if (error) {
-            logger.error('search_documents recent failed', { err: error, userId })
-            return { error: 'Không tìm kiếm được, thử lại sau.' }
+          let docs: {
+            id: string
+            filename: string
+            file_type: string
+            folder_id: string | null
+            description: string | null
+            created_at: string
+          }[] = []
+          let matchedByQuery = false
+
+          if (term) {
+            const { data, error } = await supabase
+              .from('documents')
+              .select('id, filename, file_type, folder_id, description, created_at')
+              .eq('user_id', userId)
+              .is('deleted_at', null)
+              .or(`filename.ilike.%${term}%,description.ilike.%${term}%`)
+              .order('created_at', { ascending: false })
+              .limit(15)
+            if (error) {
+              logger.error('search_documents failed', { err: error, userId })
+              return { error: 'Không tìm kiếm được, thử lại sau.' }
+            }
+            docs = data ?? []
+            matchedByQuery = docs.length > 0
           }
-          docs = data ?? []
-        }
 
-        return {
-          matched_by_query: matchedByQuery,
-          hint: matchedByQuery
-            ? undefined
-            : term
-              ? `Không khớp tên "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
-              : 'Danh sách file gần đây.',
-          documents: docs.map((d) => ({
-            document_id: d.id,
-            filename: d.filename,
-            file_type: d.file_type,
-            folder_id: d.folder_id,
-            description: d.description,
-          })),
+          if (docs.length === 0) {
+            const { data, error } = await fetchRecent()
+            if (error) {
+              logger.error('search_documents recent failed', { err: error, userId })
+              return { error: 'Không tìm kiếm được, thử lại sau.' }
+            }
+            docs = data ?? []
+          }
+
+          return {
+            matched_by_query: matchedByQuery,
+            hint: matchedByQuery
+              ? undefined
+              : term
+                ? `Không khớp tên "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
+                : 'Danh sách file gần đây.',
+            documents: docs.map((d) => ({
+              document_id: d.id,
+              filename: d.filename,
+              file_type: d.file_type,
+              folder_id: d.folder_id,
+              description: d.description,
+            })),
+          }
+        } catch (err) {
+          logger.error('search_documents threw', { err, userId })
+          return { error: 'Không tìm kiếm được, thử lại sau.' }
         }
       },
     }),
 
     list_folders: tool({
       description: 'Liệt kê thư mục của người dùng (để lấy folder_id khi di chuyển tài liệu).',
-      parameters: z.object({}),
+      parameters: z.object({
+        _: z.string().optional().describe('Bỏ trống'),
+      }),
       execute: async () => {
-        const { data: folders } = await supabase
-          .from('folders')
-          .select('id, name, parent_id')
-          .eq('user_id', userId)
-          .order('name')
-          .limit(100)
-        return {
-          folders: (folders ?? []).map((f) => ({
-            folder_id: f.id,
-            name: f.name,
-            parent_id: f.parent_id,
-          })),
+        try {
+          const { data: folders } = await supabase
+            .from('folders')
+            .select('id, name, parent_id')
+            .eq('user_id', userId)
+            .order('name')
+            .limit(100)
+          return {
+            folders: (folders ?? []).map((f) => ({
+              folder_id: f.id,
+              name: f.name,
+              parent_id: f.parent_id,
+            })),
+          }
+        } catch (err) {
+          logger.error('list_folders threw', { err, userId })
+          return { error: 'Không liệt kê được thư mục.' }
         }
       },
     }),
 
     list_tags: tool({
       description: 'Liệt kê tag của người dùng (để lấy tag_id khi gắn tag cho tài liệu).',
-      parameters: z.object({}),
+      parameters: z.object({
+        _: z.string().optional().describe('Bỏ trống'),
+      }),
       execute: async () => {
-        const { data: tags } = await supabase
-          .from('tags')
-          .select('id, name, color')
-          .eq('user_id', userId)
-          .order('name')
-          .limit(100)
-        return {
-          tags: (tags ?? []).map((t) => ({ tag_id: t.id, name: t.name })),
+        try {
+          const { data: tags } = await supabase
+            .from('tags')
+            .select('id, name, color')
+            .eq('user_id', userId)
+            .order('name')
+            .limit(100)
+          return {
+            tags: (tags ?? []).map((t) => ({ tag_id: t.id, name: t.name })),
+          }
+        } catch (err) {
+          logger.error('list_tags threw', { err, userId })
+          return { error: 'Không liệt kê được tag.' }
         }
       },
     }),
@@ -381,56 +433,64 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Đề xuất đổi tên một tài liệu (mọi loại file). KHÔNG thực thi ngay — người dùng phải bấm Xác nhận.',
       parameters: z.object({
-        document_id: z.string().uuid().describe('ID tài liệu (lấy từ search_documents)'),
+        document_id: IdSchema.describe('ID tài liệu (lấy từ search_documents)'),
         new_name: z.string().min(1).max(200).describe('Tên mới'),
       }),
       execute: async ({ document_id, new_name }) => {
-        const { data: doc } = await supabase
-          .from('documents')
-          .select('id, filename, deleted_at')
-          .eq('id', document_id)
-          .eq('user_id', userId)
-          .single()
-        if (!doc || doc.deleted_at) {
-          return { error: 'Không tìm thấy tài liệu này.' }
-        }
+        try {
+          const id = parseId(document_id, 'document_id')
+          if (typeof id !== 'string') return id
 
-        const { data: action, error } = await supabase
-          .from('chat_actions')
-          .insert({
-            user_id: userId,
-            session_id: sessionId,
-            action_type: 'rename_document',
-            document_id,
-            payload: { old_title: doc.filename, new_name },
-            status: 'pending',
-          })
-          .select('id')
-          .single()
-
-        if (error || !action) {
-          logger.error('propose_rename_document failed', {
-            err: error,
-            userId,
-            documentId: document_id,
-          })
-          return {
-            error: 'Không tạo được đề xuất đổi tên. Thử lại hoặc đổi tên trong Kho dữ liệu.',
+          const { data: doc } = await supabase
+            .from('documents')
+            .select('id, filename, deleted_at')
+            .eq('id', id)
+            .eq('user_id', userId)
+            .single()
+          if (!doc || doc.deleted_at) {
+            return { error: 'Không tìm thấy tài liệu này.' }
           }
-        }
 
-        onPendingAction({
-          id: action.id,
-          action_type: 'rename_document',
-          document_id,
-          filename: doc.filename,
-          preview: `Tên mới: ${new_name}`,
-        })
+          const { data: action, error } = await supabase
+            .from('chat_actions')
+            .insert({
+              user_id: userId,
+              session_id: sessionId,
+              action_type: 'rename_document',
+              document_id: id,
+              payload: { old_title: doc.filename, new_name },
+              status: 'pending',
+            })
+            .select('id')
+            .single()
 
-        return {
-          proposal_created: true,
-          action_id: action.id,
-          message: 'Đề xuất đổi tên đã tạo. Báo người dùng bấm Xác nhận.',
+          if (error || !action) {
+            logger.error('propose_rename_document failed', {
+              err: error,
+              userId,
+              documentId: id,
+            })
+            return {
+              error: 'Không tạo được đề xuất đổi tên. Thử lại hoặc đổi tên trong Kho dữ liệu.',
+            }
+          }
+
+          onPendingAction({
+            id: action.id,
+            action_type: 'rename_document',
+            document_id: id,
+            filename: doc.filename,
+            preview: `Tên mới: ${new_name}`,
+          })
+
+          return {
+            proposal_created: true,
+            action_id: action.id,
+            message: 'Đề xuất đổi tên đã tạo. Báo người dùng bấm Xác nhận.',
+          }
+        } catch (err) {
+          logger.error('propose_rename_document threw', { err, userId })
+          return { error: 'Lỗi khi tạo đề xuất đổi tên.' }
         }
       },
     }),
@@ -439,67 +499,80 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Đề xuất di chuyển tài liệu vào thư mục khác (folder_id từ list_folders; null = về thư mục gốc). KHÔNG thực thi ngay — cần người dùng Xác nhận.',
       parameters: z.object({
-        document_id: z.string().uuid().describe('ID tài liệu (lấy từ search_documents)'),
-        folder_id: z
-          .string()
-          .uuid()
-          .nullable()
-          .describe('ID thư mục đích (lấy từ list_folders), null để chuyển về gốc'),
+        document_id: IdSchema.describe('ID tài liệu (lấy từ search_documents)'),
+        folder_id: IdSchema.nullable().describe(
+          'ID thư mục đích (lấy từ list_folders), null để chuyển về gốc'
+        ),
       }),
       execute: async ({ document_id, folder_id }) => {
-        const { data: doc } = await supabase
-          .from('documents')
-          .select('id, filename, deleted_at')
-          .eq('id', document_id)
-          .eq('user_id', userId)
-          .single()
-        if (!doc || doc.deleted_at) {
-          return { error: 'Không tìm thấy tài liệu này.' }
-        }
+        try {
+          const id = parseId(document_id, 'document_id')
+          if (typeof id !== 'string') return id
 
-        let folderName = 'Thư mục gốc'
-        if (folder_id) {
-          const { data: folder } = await supabase
-            .from('folders')
-            .select('id, name')
-            .eq('id', folder_id)
+          let folderId: string | null = null
+          if (folder_id) {
+            const parsedFolder = parseId(folder_id, 'folder_id')
+            if (typeof parsedFolder !== 'string') return parsedFolder
+            folderId = parsedFolder
+          }
+
+          const { data: doc } = await supabase
+            .from('documents')
+            .select('id, filename, deleted_at')
+            .eq('id', id)
             .eq('user_id', userId)
             .single()
-          if (!folder) {
-            return { error: 'Thư mục đích không tồn tại. Dùng list_folders để lấy đúng ID.' }
+          if (!doc || doc.deleted_at) {
+            return { error: 'Không tìm thấy tài liệu này.' }
           }
-          folderName = folder.name
-        }
 
-        const { data: action, error } = await supabase
-          .from('chat_actions')
-          .insert({
-            user_id: userId,
-            session_id: sessionId,
+          let folderName = 'Thư mục gốc'
+          if (folderId) {
+            const { data: folder } = await supabase
+              .from('folders')
+              .select('id, name')
+              .eq('id', folderId)
+              .eq('user_id', userId)
+              .single()
+            if (!folder) {
+              return { error: 'Thư mục đích không tồn tại. Dùng list_folders để lấy đúng ID.' }
+            }
+            folderName = folder.name
+          }
+
+          const { data: action, error } = await supabase
+            .from('chat_actions')
+            .insert({
+              user_id: userId,
+              session_id: sessionId,
+              action_type: 'move_document',
+              document_id: id,
+              payload: { title: doc.filename, folder_id: folderId, folder_name: folderName },
+              status: 'pending',
+            })
+            .select('id')
+            .single()
+
+          if (error || !action) {
+            return { error: 'Không tạo được đề xuất.' }
+          }
+
+          onPendingAction({
+            id: action.id,
             action_type: 'move_document',
-            document_id,
-            payload: { title: doc.filename, folder_id, folder_name: folderName },
-            status: 'pending',
+            document_id: id,
+            filename: doc.filename,
+            preview: `Chuyển vào: ${folderName}`,
           })
-          .select('id')
-          .single()
 
-        if (error || !action) {
-          return { error: 'Không tạo được đề xuất.' }
-        }
-
-        onPendingAction({
-          id: action.id,
-          action_type: 'move_document',
-          document_id,
-          filename: doc.filename,
-          preview: `Chuyển vào: ${folderName}`,
-        })
-
-        return {
-          proposal_created: true,
-          action_id: action.id,
-          message: 'Đề xuất di chuyển đã tạo. Báo người dùng bấm Xác nhận.',
+          return {
+            proposal_created: true,
+            action_id: action.id,
+            message: 'Đề xuất di chuyển đã tạo. Báo người dùng bấm Xác nhận.',
+          }
+        } catch (err) {
+          logger.error('propose_move_document threw', { err, userId })
+          return { error: 'Lỗi khi tạo đề xuất di chuyển.' }
         }
       },
     }),
@@ -508,59 +581,78 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Đề xuất gắn tag cho tài liệu (thêm vào tag hiện có, không xóa tag cũ). Tag phải tồn tại — lấy tag_id từ list_tags. KHÔNG thực thi ngay — cần người dùng Xác nhận.',
       parameters: z.object({
-        document_id: z.string().uuid().describe('ID tài liệu (lấy từ search_documents)'),
-        tag_ids: z.array(z.string().uuid()).min(1).max(10).describe('Danh sách tag_id (lấy từ list_tags)'),
+        document_id: IdSchema.describe('ID tài liệu (lấy từ search_documents)'),
+        tag_ids: z
+          .array(IdSchema)
+          .min(1)
+          .max(10)
+          .describe('Danh sách tag_id (lấy từ list_tags)'),
       }),
       execute: async ({ document_id, tag_ids }) => {
-        const { data: doc } = await supabase
-          .from('documents')
-          .select('id, filename, deleted_at')
-          .eq('id', document_id)
-          .eq('user_id', userId)
-          .single()
-        if (!doc || doc.deleted_at) {
-          return { error: 'Không tìm thấy tài liệu này.' }
-        }
+        try {
+          const id = parseId(document_id, 'document_id')
+          if (typeof id !== 'string') return id
 
-        const { data: tags } = await supabase
-          .from('tags')
-          .select('id, name')
-          .eq('user_id', userId)
-          .in('id', tag_ids)
-        if (!tags || tags.length !== tag_ids.length) {
-          return { error: 'Một số tag không tồn tại. Dùng list_tags để lấy đúng ID.' }
-        }
+          const parsedTags: string[] = []
+          for (const raw of tag_ids) {
+            const tid = parseId(raw, 'tag_id')
+            if (typeof tid !== 'string') return tid
+            parsedTags.push(tid)
+          }
 
-        const tagNames = tags.map((t) => t.name)
-        const { data: action, error } = await supabase
-          .from('chat_actions')
-          .insert({
-            user_id: userId,
-            session_id: sessionId,
+          const { data: doc } = await supabase
+            .from('documents')
+            .select('id, filename, deleted_at')
+            .eq('id', id)
+            .eq('user_id', userId)
+            .single()
+          if (!doc || doc.deleted_at) {
+            return { error: 'Không tìm thấy tài liệu này.' }
+          }
+
+          const { data: tags } = await supabase
+            .from('tags')
+            .select('id, name')
+            .eq('user_id', userId)
+            .in('id', parsedTags)
+          if (!tags || tags.length !== parsedTags.length) {
+            return { error: 'Một số tag không tồn tại. Dùng list_tags để lấy đúng ID.' }
+          }
+
+          const tagNames = tags.map((t) => t.name)
+          const { data: action, error } = await supabase
+            .from('chat_actions')
+            .insert({
+              user_id: userId,
+              session_id: sessionId,
+              action_type: 'tag_document',
+              document_id: id,
+              payload: { title: doc.filename, tag_ids: parsedTags, tag_names: tagNames },
+              status: 'pending',
+            })
+            .select('id')
+            .single()
+
+          if (error || !action) {
+            return { error: 'Không tạo được đề xuất.' }
+          }
+
+          onPendingAction({
+            id: action.id,
             action_type: 'tag_document',
-            document_id,
-            payload: { title: doc.filename, tag_ids, tag_names: tagNames },
-            status: 'pending',
+            document_id: id,
+            filename: doc.filename,
+            preview: `Gắn tag: ${tagNames.join(', ')}`,
           })
-          .select('id')
-          .single()
 
-        if (error || !action) {
-          return { error: 'Không tạo được đề xuất.' }
-        }
-
-        onPendingAction({
-          id: action.id,
-          action_type: 'tag_document',
-          document_id,
-          filename: doc.filename,
-          preview: `Gắn tag: ${tagNames.join(', ')}`,
-        })
-
-        return {
-          proposal_created: true,
-          action_id: action.id,
-          message: 'Đề xuất gắn tag đã tạo. Báo người dùng bấm Xác nhận.',
+          return {
+            proposal_created: true,
+            action_id: action.id,
+            message: 'Đề xuất gắn tag đã tạo. Báo người dùng bấm Xác nhận.',
+          }
+        } catch (err) {
+          logger.error('propose_tag_document threw', { err, userId })
+          return { error: 'Lỗi khi tạo đề xuất gắn tag.' }
         }
       },
     }),
@@ -569,69 +661,82 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       description:
         'Khôi phục ghi chú đã xóa (đưa ra khỏi thùng rác). Không phá hủy nên chạy ngay. Dùng khi người dùng muốn hoàn tác việc xóa.',
       parameters: z.object({
-        document_id: z.string().uuid().optional().describe('ID ghi chú; bỏ trống để khôi phục note xóa gần nhất'),
+        document_id: IdSchema.optional().describe(
+          'ID ghi chú; bỏ trống để khôi phục note xóa gần nhất'
+        ),
       }),
       execute: async ({ document_id }) => {
-        let target: { id: string; filename: string; r2_key: string } | null = null
-
-        if (document_id) {
-          const { data } = await supabase
-            .from('documents')
-            .select('id, filename, r2_key, deleted_at')
-            .eq('id', document_id)
-            .eq('user_id', userId)
-            .eq('file_type', 'note')
-            .single()
-          if (data?.deleted_at) target = data
-        } else {
-          const { data } = await supabase
-            .from('documents')
-            .select('id, filename, r2_key')
-            .eq('user_id', userId)
-            .eq('file_type', 'note')
-            .not('deleted_at', 'is', null)
-            .order('deleted_at', { ascending: false })
-            .limit(1)
-            .single()
-          target = data
-        }
-
-        if (!target) {
-          return { error: 'Không có ghi chú nào trong thùng rác để khôi phục.' }
-        }
-
-        const { error } = await supabase
-          .from('documents')
-          .update({ deleted_at: null, status: 'pending', chunk_count: null })
-          .eq('id', target.id)
-          .eq('user_id', userId)
-
-        if (error) {
-          return { error: 'Không khôi phục được ghi chú.' }
-        }
-
         try {
-          await enqueueIngestionJob({
-            document_id: target.id,
-            r2_key: target.r2_key,
-            file_type: 'note',
+          let target: { id: string; filename: string; r2_key: string } | null = null
+
+          if (document_id) {
+            const id = parseId(document_id, 'document_id')
+            if (typeof id !== 'string') return id
+            const { data } = await supabase
+              .from('documents')
+              .select('id, filename, r2_key, deleted_at')
+              .eq('id', id)
+              .eq('user_id', userId)
+              .eq('file_type', 'note')
+              .single()
+            if (data?.deleted_at) target = data
+          } else {
+            const { data } = await supabase
+              .from('documents')
+              .select('id, filename, r2_key')
+              .eq('user_id', userId)
+              .eq('file_type', 'note')
+              .not('deleted_at', 'is', null)
+              .order('deleted_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            target = data
+          }
+
+          if (!target) {
+            return { error: 'Không có ghi chú nào trong thùng rác để khôi phục.' }
+          }
+
+          const { error } = await supabase
+            .from('documents')
+            .update({ deleted_at: null, status: 'pending', chunk_count: null })
+            .eq('id', target.id)
+            .eq('user_id', userId)
+
+          if (error) {
+            return { error: 'Không khôi phục được ghi chú.' }
+          }
+
+          try {
+            await enqueueIngestionJob({
+              document_id: target.id,
+              r2_key: target.r2_key,
+              file_type: 'note',
+              user_id: userId,
+            })
+          } catch (err) {
+            logger.error('restore_note: reindex queue failed', {
+              err,
+              userId,
+              documentId: target.id,
+            })
+          }
+
+          await supabase.from('chat_actions').insert({
             user_id: userId,
+            session_id: sessionId,
+            action_type: 'restore_note',
+            document_id: target.id,
+            payload: { title: target.filename },
+            status: 'executed',
+            executed_at: new Date().toISOString(),
           })
+
+          return { success: true, document_id: target.id, title: target.filename }
         } catch (err) {
-          logger.error('restore_note: reindex queue failed', { err, userId, documentId: target.id })
+          logger.error('restore_note threw', { err, userId })
+          return { error: 'Lỗi khi khôi phục ghi chú.' }
         }
-
-        await supabase.from('chat_actions').insert({
-          user_id: userId,
-          session_id: sessionId,
-          action_type: 'restore_note',
-          document_id: target.id,
-          payload: { title: target.filename },
-          status: 'executed',
-          executed_at: new Date().toISOString(),
-        })
-
-        return { success: true, document_id: target.id, title: target.filename }
       },
     }),
   }
