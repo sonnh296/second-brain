@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
-import { isBrowserInlineType, isImageType } from '@/lib/upload/file-types'
+import {
+  isBrowserInlineType,
+  isImageType,
+  isTranscribableType,
+} from '@/lib/upload/file-types'
+
+/** Strip legacy "Mô tả: ..." prefix so the UI shows only the subtitle text. */
+function subtitleText(raw: string | null): string | null {
+  if (!raw?.trim()) return null
+  const text = raw.trim()
+  const match = text.match(/^Mô tả:\s*[^\n]*\n\n([\s\S]*)$/)
+  return (match ? match[1] : text).trim() || null
+}
 
 export async function GET(
   req: NextRequest,
@@ -70,6 +82,33 @@ export async function GET(
     })
   }
 
+  // Video / audio: play immediately; subtitles are generated automatically in the background.
+  if (isTranscribableType(doc.file_type)) {
+    const isVideo = doc.file_type === 'mp4' || doc.file_type === 'mov'
+    const transcript = subtitleText(storedContent)
+    const processing = doc.status !== 'done' && doc.status !== 'failed'
+
+    let message: string | undefined
+    if (processing) {
+      message = 'Đang tự động tạo phụ đề...'
+    } else if (doc.status === 'failed') {
+      message = 'Tạo phụ đề thất bại'
+    } else if (!transcript) {
+      message = 'Không có lời thoại để tạo phụ đề'
+    }
+
+    return NextResponse.json({
+      filename: doc.filename,
+      file_type: doc.file_type,
+      status: doc.status,
+      content: transcript,
+      preview_type: isVideo ? 'video' : 'audio',
+      viewer_url: viewerUrl,
+      can_inline: true,
+      message,
+    })
+  }
+
   if (doc.file_type === 'pdf' && doc.status === 'done') {
     return NextResponse.json({
       filename: doc.filename,
@@ -89,7 +128,7 @@ export async function GET(
       status: doc.status,
       content: storedContent,
       preview_type: 'unavailable',
-      message: 'Document is still processing or failed',
+      message: 'Tài liệu đang được xử lý...',
     })
   }
 

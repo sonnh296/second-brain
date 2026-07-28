@@ -329,9 +329,20 @@ export async function runIngestionPipeline(
           })
           return
         }
+        // Index description + transcript for search; store only transcript as the subtitle text.
         rawText = [description ? `Mô tả: ${description}` : '', transcript.text]
           .filter(Boolean)
           .join('\n\n')
+        await indexExtractedText(
+          supabase,
+          documentId,
+          userId,
+          displayFilename,
+          rawText,
+          { extracted_content: transcript.text || null },
+          pageOffsets
+        )
+        return
       } else {
         const parsed = await parseFileWithPages(tempPath!, fileType)
         rawText = parsed.text

@@ -38,7 +38,7 @@ import {
   FolderBreadcrumb,
 } from '@/components/documents/folder-items'
 import { useDocumentPolling } from '@/hooks/use-document-polling'
-import { TYPE_LABELS, isImageType, isTranscribableType } from '@/lib/upload/file-types'
+import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
 import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
 
 type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
@@ -228,6 +228,26 @@ export default function DocumentsPage() {
   }, [currentFolderId, refreshFolderView, fetchTags])
 
   useDocumentPolling(documents, setDocuments)
+
+  // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
+  useEffect(() => {
+    if (!selectedDoc) return
+    const latest = documents.find((d) => d.id === selectedDoc.id)
+    if (!latest) return
+
+    if (
+      latest.status !== selectedDoc.status ||
+      latest.chunk_count !== selectedDoc.chunk_count ||
+      latest.error_message !== selectedDoc.error_message
+    ) {
+      setSelectedDoc(latest)
+      if (latest.status === 'done' || latest.status === 'failed') {
+        fetch(`/api/documents/${latest.id}/preview`).then(async (res) => {
+          if (res.ok) setPreview(await res.json())
+        })
+      }
+    }
+  }, [documents, selectedDoc])
 
   function navigateToFolder(folderId: string | null) {
     setCurrentFolderId(folderId)
@@ -1018,11 +1038,7 @@ export default function DocumentsPage() {
               onSaveTags={saveTags}
               onFolderChange={setSelectedFolderId}
               onSaveFolder={saveFolder}
-              onReprocessOcr={
-                isImageType(selectedDoc.file_type) || isTranscribableType(selectedDoc.file_type)
-                  ? reprocessOcr
-                  : undefined
-              }
+              onReprocessOcr={isImageType(selectedDoc.file_type) ? reprocessOcr : undefined}
               reprocessingOcr={reprocessingOcr}
               onEditNote={
                 selectedDoc.file_type === 'note'

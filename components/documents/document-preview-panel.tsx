@@ -5,15 +5,14 @@ import { Download, ExternalLink, X } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { StatusBadge, STATUS_LABELS } from '@/components/documents/document-grid'
+import { StatusBadge } from '@/components/documents/document-grid'
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import { FolderPicker } from '@/components/documents/folder-items'
 import { cn } from '@/lib/utils'
 import { isBrowserInlineType, isImageType, isTranscribableType } from '@/lib/upload/file-types'
 import type { Document, Tag } from '@/lib/db/types'
 
-type DocStatus = Document['status']
-type PanelTab = 'content' | 'details'
+type PanelTab = 'content' | 'subtitles' | 'details'
 
 interface PreviewData {
   filename: string
@@ -77,6 +76,7 @@ function ContentPreview({
 }) {
   const viewerUrl = preview?.viewer_url ?? preview?.image_url ?? `/api/documents/${doc.id}/download`
   const fileType = preview?.file_type ?? doc.file_type
+  const isMedia = isTranscribableType(fileType)
 
   if (previewLoading) {
     return (
@@ -86,7 +86,8 @@ function ContentPreview({
     )
   }
 
-  if (doc.status !== 'done' && doc.file_type !== 'note') {
+  // Media can play while subtitles are still being generated.
+  if (doc.status !== 'done' && doc.file_type !== 'note' && !isMedia) {
     return (
       <PreviewBody>
         <div className="p-4 text-sm text-muted-foreground">
@@ -131,41 +132,25 @@ function ContentPreview({
     )
   }
 
-  if (['mp4', 'mov'].includes(fileType)) {
+  if (fileType === 'mp4' || fileType === 'mov') {
     return (
       <PreviewBody>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
           <video
             src={viewerUrl}
             controls
-            className="w-full max-h-[min(50vh,420px)] rounded border bg-black"
+            className="w-full max-h-full rounded border bg-black"
           />
-          {preview?.content && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Phụ đề (AI)</p>
-              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-                {preview.content}
-              </pre>
-            </div>
-          )}
         </div>
       </PreviewBody>
     )
   }
 
-  if (['mp3', 'wav'].includes(fileType)) {
+  if (fileType === 'mp3' || fileType === 'wav') {
     return (
       <PreviewBody>
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-3">
+        <div className="p-6 flex items-center justify-center">
           <audio src={viewerUrl} controls className="w-full" />
-          {preview?.content && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Phụ đề (AI)</p>
-              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-                {preview.content}
-              </pre>
-            </div>
-          )}
         </div>
       </PreviewBody>
     )
@@ -187,6 +172,59 @@ function ContentPreview({
     <PreviewBody>
       <div className="p-4 text-sm text-muted-foreground">
         <p>{preview?.message ?? 'Không có nội dung văn bản để xem trước'}</p>
+      </div>
+    </PreviewBody>
+  )
+}
+
+function SubtitlesPanel({
+  preview,
+  previewLoading,
+  status,
+}: {
+  preview: PreviewData | null
+  previewLoading: boolean
+  status: Document['status']
+}) {
+  if (previewLoading) {
+    return (
+      <PreviewBody>
+        <p className="text-sm text-muted-foreground p-4">Đang tải...</p>
+      </PreviewBody>
+    )
+  }
+
+  const processing = status === 'pending' || status === 'processing'
+  const transcript = preview?.content?.trim() || null
+
+  if (processing && !transcript) {
+    return (
+      <PreviewBody>
+        <div className="p-4 text-sm text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">Đang tạo phụ đề...</p>
+          <p>Phụ đề sẽ hiện ở đây khi xử lý xong. Bạn vẫn xem được video ở tab Nội dung.</p>
+        </div>
+      </PreviewBody>
+    )
+  }
+
+  if (transcript) {
+    return (
+      <PreviewBody>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+          <p className="text-xs font-medium text-muted-foreground mb-2">Bản phụ đề</p>
+          <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
+            {transcript}
+          </pre>
+        </div>
+      </PreviewBody>
+    )
+  }
+
+  return (
+    <PreviewBody>
+      <div className="p-4 text-sm text-muted-foreground">
+        <p>{preview?.message ?? 'Không có phụ đề'}</p>
       </div>
     </PreviewBody>
   )
@@ -224,6 +262,23 @@ export function DocumentPreviewPanel({
   const [tab, setTab] = useState<PanelTab>('content')
   const viewerUrl = `/api/documents/${doc.id}/download`
   const canInline = isBrowserInlineType(doc.file_type)
+  const isMedia = isTranscribableType(doc.file_type)
+  const canOpenDownload = doc.file_type === 'note' || doc.status === 'done' || isMedia
+
+  const tabBtn = (id: PanelTab, label: string) => (
+    <button
+      type="button"
+      onClick={() => setTab(id)}
+      className={cn(
+        'flex-1 px-3 py-2 text-sm transition-colors cursor-pointer',
+        tab === id
+          ? 'border-b-2 border-primary font-medium text-foreground'
+          : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <div className="w-full sm:w-[min(100vw-2rem,28rem)] lg:w-lg shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
@@ -235,36 +290,15 @@ export function DocumentPreviewPanel({
       </div>
 
       <div className="shrink-0 flex border-b">
-        <button
-          type="button"
-          onClick={() => setTab('content')}
-          className={cn(
-            'flex-1 px-4 py-2 text-sm transition-colors cursor-pointer',
-            tab === 'content'
-              ? 'border-b-2 border-primary font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Nội dung
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('details')}
-          className={cn(
-            'flex-1 px-4 py-2 text-sm transition-colors cursor-pointer',
-            tab === 'details'
-              ? 'border-b-2 border-primary font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          Chi tiết
-        </button>
+        {tabBtn('content', 'Nội dung')}
+        {isMedia && tabBtn('subtitles', 'Phụ đề')}
+        {tabBtn('details', 'Chi tiết')}
       </div>
 
       {tab === 'content' ? (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <ContentPreview doc={doc} preview={preview} previewLoading={previewLoading} />
-          {doc.file_type !== 'note' && doc.status === 'done' && (
+          {doc.file_type !== 'note' && canOpenDownload && (
             <div className="shrink-0 flex gap-2 p-3 border-t bg-muted/50 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
               {canInline && (
                 <a
@@ -293,6 +327,10 @@ export function DocumentPreviewPanel({
               </a>
             </div>
           )}
+        </div>
+      ) : tab === 'subtitles' ? (
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <SubtitlesPanel preview={preview} previewLoading={previewLoading} status={doc.status} />
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
@@ -374,11 +412,7 @@ export function DocumentPreviewPanel({
                   onClick={onReprocessOcr}
                   disabled={reprocessingOcr}
                 >
-                  {reprocessingOcr
-                    ? 'Đang xử lý lại...'
-                    : isTranscribableType(doc.file_type)
-                      ? 'Tạo phụ đề (AI)'
-                      : 'Quét lại OCR'}
+                  {reprocessingOcr ? 'Đang quét lại...' : 'Quét lại OCR'}
                 </Button>
               )}
               {onEditNote && (
@@ -396,5 +430,3 @@ export function DocumentPreviewPanel({
     </div>
   )
 }
-
-export { STATUS_LABELS }
