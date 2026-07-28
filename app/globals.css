@@ -128,3 +128,342 @@
     @apply font-sans;
   }
 }
+
+/* Guest / login ambient motion */
+@keyframes guest-float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes guest-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes guest-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes guest-brand-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(15, 23, 42, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(15, 23, 42, 0.04);
+  }
+}
+
+@keyframes guest-wave-shift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(28px, -18px, 0);
+  }
+}
+
+@keyframes guest-wave-shift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-34px, 16px, 0);
+  }
+}
+
+@keyframes guest-wave-shift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(22px, 22px, 0);
+  }
+}
+
+@keyframes guest-wave-shift-d {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-20px, -14px, 0);
+  }
+}
+
+@keyframes guest-blob-morph {
+  0%,
+  100% {
+    border-radius: 58% 42% 48% 52% / 48% 55% 45% 52%;
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  33% {
+    border-radius: 42% 58% 55% 45% / 55% 42% 58% 45%;
+    transform: translate(16px, -22px) rotate(8deg) scale(1.06);
+  }
+  66% {
+    border-radius: 52% 48% 42% 58% / 44% 58% 42% 56%;
+    transform: translate(-12px, 14px) rotate(-6deg) scale(0.97);
+  }
+}
+
+@keyframes guest-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(18px, -24px);
+  }
+  50% {
+    transform: translate(36px, -8px);
+  }
+  75% {
+    transform: translate(12px, 16px);
+  }
+}
+
+@keyframes guest-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-22px, 14px);
+  }
+  50% {
+    transform: translate(-8px, -20px);
+  }
+  75% {
+    transform: translate(16px, -6px);
+  }
+}
+
+@keyframes guest-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-14px, -18px);
+  }
+  50% {
+    transform: translate(20px, -28px);
+  }
+  75% {
+    transform: translate(28px, 8px);
+  }
+}
+
+@keyframes guest-swoosh-sway {
+  0%,
+  100% {
+    transform: translateX(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateX(10px) rotate(3deg);
+  }
+}
+
+@keyframes guest-orb-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(14px, -20px) scale(1.05);
+  }
+}
+
+.guest-grid {
+  background-image:
+    linear-gradient(to right, oklch(0.72 0 0 / 0.28) 1px, transparent 1px),
+    linear-gradient(to bottom, oklch(0.72 0 0 / 0.28) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse at 40% 35%, black 18%, transparent 72%);
+}
+
+.guest-spotlight {
+  background: radial-gradient(
+    560px circle at var(--spot-x, 50%) var(--spot-y, 40%),
+    oklch(1 0 0 / 0.5),
+    transparent 55%
+  );
+}
+
+.guest-wave-layer {
+  overflow: visible;
+}
+
+.guest-wave {
+  vector-effect: non-scaling-stroke;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.guest-wave-a {
+  animation: guest-wave-shift-a 11s ease-in-out infinite;
+}
+.guest-wave-b {
+  animation: guest-wave-shift-b 14s ease-in-out infinite;
+}
+.guest-wave-c {
+  animation: guest-wave-shift-c 16s ease-in-out infinite;
+}
+.guest-wave-d {
+  animation: guest-wave-shift-d 12s ease-in-out infinite;
+}
+
+.guest-blob {
+  animation: guest-blob-morph 16s ease-in-out infinite;
+}
+
+.guest-blob-b {
+  animation-duration: 19s;
+  animation-delay: -4s;
+}
+
+.guest-blob-c {
+  animation-duration: 22s;
+  animation-delay: -8s;
+}
+
+.guest-drift {
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+.guest-drift-a {
+  animation-name: guest-drift-a;
+  animation-duration: 9s;
+}
+.guest-drift-b {
+  animation-name: guest-drift-b;
+  animation-duration: 11s;
+  animation-delay: -2s;
+}
+.guest-drift-c {
+  animation-name: guest-drift-c;
+  animation-duration: 13s;
+  animation-delay: -4s;
+}
+
+.guest-swoosh {
+  opacity: 0.9;
+  animation: guest-swoosh-sway 8s ease-in-out infinite;
+}
+
+.guest-swoosh-b {
+  animation-duration: 10s;
+  animation-delay: -3s;
+  animation-direction: reverse;
+}
+
+.guest-rise {
+  opacity: 0;
+  animation: guest-rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.guest-rise-1 {
+  animation-delay: 40ms;
+}
+.guest-rise-2 {
+  animation-delay: 120ms;
+}
+.guest-rise-3 {
+  animation-delay: 200ms;
+}
+.guest-rise-4 {
+  animation-delay: 280ms;
+}
+.guest-rise-5 {
+  animation-delay: 360ms;
+}
+.guest-rise-6 {
+  animation-delay: 440ms;
+}
+.guest-rise-7 {
+  animation-delay: 520ms;
+}
+
+.guest-title-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    oklch(0.55 0 0) 0%,
+    oklch(0.35 0 0) 40%,
+    oklch(0.62 0 0) 50%,
+    oklch(0.35 0 0) 60%,
+    oklch(0.55 0 0) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: guest-shimmer 5.5s linear infinite;
+}
+
+.guest-brand-mark {
+  animation: guest-brand-breathe 3.8s ease-in-out infinite;
+}
+
+.guest-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    oklch(1 0 0 / 0.35),
+    transparent 35%,
+    transparent 70%,
+    oklch(0.9 0 0 / 0.2)
+  );
+}
+
+.guest-card-glow {
+  animation: guest-orb-drift 10s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guest-wave,
+  .guest-blob,
+  .guest-drift,
+  .guest-swoosh,
+  .guest-title-shimmer,
+  .guest-brand-mark,
+  .guest-card-glow {
+    animation: none !important;
+  }
+
+  .guest-rise {
+    opacity: 1;
+    animation: none !important;
+  }
+
+  .guest-title-shimmer {
+    color: oklch(0.45 0 0);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+}
