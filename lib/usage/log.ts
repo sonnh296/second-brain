@@ -23,6 +23,18 @@ function normalizeTokens(n: number | undefined | null): number {
   return Math.round(n)
 }
 
+function readTokenField(
+  usage: Record<string, unknown> | null | undefined,
+  keys: string[]
+): number {
+  if (!usage) return 0
+  for (const key of keys) {
+    const v = usage[key]
+    if (typeof v === 'number') return normalizeTokens(v)
+  }
+  return 0
+}
+
 /** Persist token usage. Never throws — logging must not break chat/ingestion. */
 export async function logUsage(
   entry: UsageLogInput,
@@ -33,7 +45,14 @@ export async function logUsage(
   const totalTokens =
     normalizeTokens(entry.totalTokens) || inputTokens + outputTokens
 
-  if (inputTokens === 0 && outputTokens === 0 && totalTokens === 0) return
+  if (inputTokens === 0 && outputTokens === 0 && totalTokens === 0) {
+    logger.warn('Skipped usage log — all token counts are 0', {
+      userId: entry.userId,
+      purpose: entry.purpose,
+      model: entry.model,
+    })
+    return
+  }
 
   try {
     const supabase = client ?? createServiceSupabaseClient()
@@ -47,27 +66,79 @@ export async function logUsage(
       metadata: entry.metadata ?? {},
     })
     if (error) {
-      logger.error('Failed to log usage', { err: error, userId: entry.userId, purpose: entry.purpose })
+      logger.error('Failed to log usage', {
+        err: error,
+        code: error.code,
+        message: error.message,
+        userId: entry.userId,
+        purpose: entry.purpose,
+        hint:
+          error.code === 'PGRST205' || error.message?.includes('usage_logs')
+            ? 'Apply 001_schema_v2.sql (usage_logs table missing)'
+            : undefined,
+      })
     }
   } catch (err) {
     logger.error('Failed to log usage', { err, userId: entry.userId, purpose: entry.purpose })
   }
 }
 
-export type AiSdkUsage = {
-  promptTokens?: number
-  completionTokens?: number
-  totalTokens?: number
-} | null | undefined
+/** AI SDK v4 uses promptTokens; some providers/adapters use inputTokens / snake_case. */
+export type AiSdkUsage = Record<string, unknown> | null | undefined
 
 export function fromAiSdkUsage(usage: AiSdkUsage): {
   inputTokens: number
   outputTokens: number
   totalTokens: number
 } {
-  return {
-    inputTokens: normalizeTokens(usage?.promptTokens),
-    outputTokens: normalizeTokens(usage?.completionTokens),
-    totalTokens: normalizeTokens(usage?.totalTokens),
+  const inputTokens = readTokenField(usage ?? undefined, [
+    'promptTokens',
+    'inputTokens',
+    'prompt_tokens',
+    'input_tokens',
+  ])
+  const outputTokens = readTokenField(usage ?? undefined, [
+    'completionTokens',
+    'outputTokens',
+    'completion_tokens',
+    'output_tokens',
+  ])
+  const totalTokens =
+    readTokenField(usage ?? undefined, ['totalTokens', 'total_tokens']) ||
+    inputTokens + outputTokens
+
+  return { inputTokens, outputTokens, totalTokens }
+}
+
+/** Sum usage across multi-step tool calls when present. */
+export function fromAiSdkSteps(
+  steps:
+    | Array<{ usage?: AiSdkUsage }>
+    | null
+    | undefined,
+  fallback?: AiSdkUsage
+): {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+} {
+  if (steps && steps.length > 0) {
+    let inputTokens = 0
+    let outputTokens = 0
+    let totalTokens = 0
+    for (const step of steps) {
+      const u = fromAiSdkUsage(step.usage)
+      inputTokens += u.inputTokens
+      outputTokens += u.outputTokens
+      totalTokens += u.totalTokens
+    }
+    if (inputTokens > 0 || outputTokens > 0 || totalTokens > 0) {
+      return {
+        inputTokens,
+        outputTokens,
+        totalTokens: totalTokens || inputTokens + outputTokens,
+      }
+    }
   }
+  return fromAiSdkUsage(fallback)
 }

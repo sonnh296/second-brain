@@ -15,8 +15,12 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Second Brain",
-  description: "Personal knowledge base with RAG chat",
+  title: "Note Everything",
+  description: "Kho tri thức cá nhân với chat RAG",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

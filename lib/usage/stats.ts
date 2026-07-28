@@ -22,22 +22,35 @@ export async function getProfileStats(
   supabase: SupabaseClient,
   userId: string
 ): Promise<ProfileStats> {
-  const [{ data: profile }, { data: docs }, { data: attachments }, { data: usageRows }] =
-    await Promise.all([
-      supabase.from('profiles').select('username, role').eq('id', userId).maybeSingle(),
-      supabase
-        .from('documents')
-        .select('file_size_bytes, deleted_at')
-        .eq('user_id', userId),
-      supabase.from('message_attachments').select('byte_size').eq('user_id', userId),
-      supabase
-        .from('usage_logs')
-        .select('purpose, input_tokens, output_tokens, total_tokens, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(5000),
-    ])
+  const [
+    { data: profile },
+    { data: docs },
+    { data: attachments },
+    usageResult,
+  ] = await Promise.all([
+    supabase.from('profiles').select('username, role').eq('id', userId).maybeSingle(),
+    supabase
+      .from('documents')
+      .select('file_size_bytes, deleted_at')
+      .eq('user_id', userId),
+    supabase.from('message_attachments').select('byte_size').eq('user_id', userId),
+    supabase
+      .from('usage_logs')
+      .select('purpose, input_tokens, output_tokens, total_tokens, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+  ])
 
+  const usageRows = usageResult.data
+  const usageTrackingAvailable = !usageResult.error
+  if (usageResult.error) {
+    console.error('[profile] usage_logs query failed', {
+      code: usageResult.error.code,
+      message: usageResult.error.message,
+      userId,
+    })
+  }
   let documentsBytes = 0
   let trashBytes = 0
   let documentsCount = 0
@@ -112,6 +125,7 @@ export async function getProfileStats(
   return {
     username: profile?.username ?? 'user',
     role: profile?.role ?? 'user',
+    usage_tracking_available: usageTrackingAvailable,
     storage: {
       documents_bytes: documentsBytes,
       trash_bytes: trashBytes,

@@ -30,28 +30,6 @@ function getS3Client(): S3Client {
 
 const BUCKET = () => process.env.R2_BUCKET_NAME!
 
-/** Stream a ReadableStream directly to R2 without loading into RAM */
-export async function streamUpload(
-  key: string,
-  body: ReadableStream | Readable
-): Promise<void> {
-  const nodeStream =
-    body instanceof Readable ? body : Readable.fromWeb(body as any)
-
-  const upload = new Upload({
-    client: getS3Client(),
-    params: {
-      Bucket: BUCKET(),
-      Key: key,
-      Body: nodeStream,
-    },
-    queueSize: 4,
-    partSize: 5 * 1024 * 1024, // 5MB parts
-  })
-
-  await upload.done()
-}
-
 /** Download an R2 object to a local file path */
 export async function downloadToFile(
   key: string,

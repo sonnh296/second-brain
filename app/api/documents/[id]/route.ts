@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
-import { deleteObject } from '@/lib/storage'
-import { deleteByDocument, updateDocumentFilename } from '@/lib/vector'
-import { enqueueIngestionJob, enqueueDocumentCleanupJob } from '@/lib/queue'
+import { updateDocumentFilename } from '@/lib/vector'
+import { enqueueIngestionJob } from '@/lib/queue'
 import { fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
+import { softDeleteDocument } from '@/lib/documents/soft-delete'
+import { hardDeleteDocument } from '@/lib/documents/hard-delete'
 import { logger } from '@/lib/logger'
 
 const UpdateDocumentSchema = z.object({
@@ -203,6 +204,10 @@ export async function PATCH(
   return NextResponse.json({ ...updated, tags })
 }
 
+/**
+ * DELETE — soft-delete (move to trash) by default.
+ * DELETE ?permanent=1 — hard-delete; only allowed for items already in trash.
+ */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -216,11 +221,19 @@ export async function DELETE(
   }
 
   const { id: documentId } = await params
+  const permanent = req.nextUrl.searchParams.get('permanent') === '1'
 
-  // Verify ownership and fetch r2_key
+  if (!permanent) {
+    const result = await softDeleteDocument(supabase, user.id, documentId)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    return NextResponse.json({ success: true, trashed: true })
+  }
+
   const { data: doc } = await supabase
     .from('documents')
-    .select('id, r2_key')
+    .select('id, r2_key, deleted_at')
     .eq('id', documentId)
     .eq('user_id', user.id)
     .single()
@@ -229,64 +242,29 @@ export async function DELETE(
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
   }
 
-  const failures: ('qdrant' | 'r2')[] = []
-
-  // Step 1: Delete from Qdrant
-  try {
-    await deleteByDocument(user.id, documentId)
-  } catch (err) {
-    logger.error('Qdrant deletion failed', { err, documentId, userId: user.id })
-    failures.push('qdrant')
-  }
-
-  // Step 2: Delete from R2 (notes have no file in storage)
-  if (doc.r2_key !== 'note' && !doc.r2_key.startsWith('notes/')) {
-    try {
-      await deleteObject(doc.r2_key)
-    } catch (err) {
-      logger.error('R2 deletion failed', { err, documentId, userId: user.id, r2Key: doc.r2_key })
-      failures.push('r2')
-    }
-  }
-
-  // Step 3: Delete from Postgres (cascade removes document_chunks)
-  const { error: pgErr } = await supabase
-    .from('documents')
-    .delete()
-    .eq('id', documentId)
-    .eq('user_id', user.id)
-
-  if (pgErr) {
-    logger.error('Postgres deletion failed', { err: pgErr, documentId, userId: user.id })
+  if (!doc.deleted_at) {
     return NextResponse.json(
-      { error: 'Failed to delete document record', failed_steps: [...failures, 'postgres'] },
-      { status: 500 }
+      { error: 'Move to trash first, or omit permanent=1' },
+      { status: 400 }
     )
   }
 
-  if (failures.length > 0) {
-    try {
-      await enqueueDocumentCleanupJob({
-        user_id: user.id,
-        document_id: documentId,
-        r2_key: doc.r2_key,
-        steps: failures,
-      })
-    } catch (err) {
-      logger.error('Failed to enqueue document cleanup job', {
-        err,
-        documentId,
-        userId: user.id,
-        failedSteps: failures,
-      })
-    }
+  const result = await hardDeleteDocument(supabase, user.id, {
+    id: doc.id,
+    r2_key: doc.r2_key,
+  })
 
-    return NextResponse.json({
-      success: true,
-      cleanup_queued: true,
-      failed_steps: failures,
-    })
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.error, failed_steps: result.failed_steps },
+      { status: result.status }
+    )
   }
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({
+    success: true,
+    permanent: true,
+    cleanup_queued: result.cleanup_queued,
+    failed_steps: result.failed_steps,
+  })
 }

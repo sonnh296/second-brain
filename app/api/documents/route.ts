@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   let { data, error } = await runQuery(true)
 
   if (isMissingDeletedAtColumn(error)) {
-    logger.warn('documents.deleted_at missing — falling back until migration 015/018 is applied', {
+    logger.warn('documents.deleted_at missing — falling back until schema is updated', {
       userId: user.id,
       message: error?.message,
     })

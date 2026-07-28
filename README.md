@@ -33,17 +33,11 @@ cp .env.example .env.local
 # Fill in your API keys and URLs in .env.local
 ```
 
-### 3. Run Supabase migrations
+### 3. Run Supabase schema
 
-Open your Supabase project → SQL Editor → run in order:
+Open your Supabase project → SQL Editor → run once:
 
-1. `supabase/migrations/001_init.sql`
-2. `supabase/migrations/002_note_content.sql`
-3. `supabase/migrations/003_description.sql`
-4. `supabase/migrations/004_indexes.sql`
-5. `supabase/migrations/005_profiles.sql`
-6. `supabase/migrations/006_fix_search_rpc.sql`
-7. `supabase/migrations/007_vi_fts.sql`
+`supabase/migrations/001_schema_v2.sql`
 
 Create the first admin user (set `ADMIN_PASSWORD` in `.env.local` first):
 

@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { GuestAmbient } from "@/components/auth/guest-ambient";
-import { Brain, FileText, MessageSquare, Sparkles } from "lucide-react";
+import { FileText, MessageSquare, Sparkles } from "lucide-react";
 
 const FEATURES = [
   {
@@ -32,14 +33,18 @@ export function GuestShell({
         <aside className="guest-panel flex flex-col justify-between px-6 py-10 sm:px-10 lg:w-[min(44vw,520px)] lg:shrink-0 lg:border-r lg:border-border/50 lg:bg-background/20 lg:px-12 lg:py-14 lg:backdrop-blur-[2px]">
           <div>
             <div className="guest-rise guest-rise-1 flex items-center gap-2.5 text-foreground">
-              <div className="guest-brand-mark flex h-9 w-9 items-center justify-center rounded-lg border border-border/80 bg-background/80 shadow-sm">
-                <Brain
-                  className="h-[18px] w-[18px] text-foreground/80"
-                  strokeWidth={1.75}
+              <div className="guest-brand-mark flex h-9 w-9 items-center justify-center rounded-lg border border-border/80 bg-background/80 shadow-sm overflow-hidden">
+                <Image
+                  src="/logo.png"
+                  alt="Note Everything"
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 object-cover"
+                  priority
                 />
               </div>
               <span className="text-sm font-semibold tracking-tight">
-                Second Brain
+                Note Everything
               </span>
             </div>
 
@@ -51,7 +56,7 @@ export function GuestShell({
               </span>
             </h1>
             <p className="guest-rise guest-rise-3 mt-4 max-w-sm text-sm text-muted-foreground leading-relaxed">
-              Lưu trữ, tìm kiếm và trò chuyện với tài liệu — gọn gàng, riêng tư.
+              Lưu trữ, tìm kiếm và trò chuyện với tài liệu
             </p>
           </div>
 

@@ -4,23 +4,19 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   FileText,
   FileType,
-  StickyNote,
   File,
   Upload,
   Plus,
   Search,
   LayoutGrid,
   List,
-  Image as ImageIcon,
   Tag,
-  Film,
-  Music,
-  Archive,
   Folder as FolderIcon,
   FolderPlus,
   ChevronLeft,
   Trash2,
   RotateCcw,
+  StickyNote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +29,15 @@ import { DocumentPreviewPanel } from "@/components/documents/document-preview-pa
 import { NoteModal } from "@/components/documents/note-modal";
 import { FileDropzone } from "@/components/documents/file-dropzone";
 import { TagManager } from "@/components/documents/tag-manager";
+import { FileIcon } from "@/components/documents/file-icon";
+import type {
+  TypeFilter,
+  StatusFilter,
+  SortBy,
+  ViewMode,
+  PreviewData,
+  NoteModalState,
+} from "@/components/documents/types";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -41,36 +46,20 @@ import {
   FolderBreadcrumb,
 } from "@/components/documents/folder-items";
 import { useDocumentPolling } from "@/hooks/use-document-polling";
+import { useTrash } from "@/hooks/use-trash";
 import {
   TYPE_LABELS,
   isImageType,
   MAX_DOCUMENT_DESCRIPTION_LENGTH,
 } from "@/lib/upload/file-types";
-import type { Document, Tag as TagType, Folder } from "@/lib/db/types";
+import {
+  putToR2WithProgress,
+  waitForDocumentProcessing,
+} from "@/lib/upload/put-with-progress";
+import { formatBytes } from "@/lib/usage/format";
+import type { Document, Tag as TagType, Folder, DocumentStatus } from "@/lib/db/types";
 
-type DocStatus = "pending" | "processing" | "done" | "failed";
-type TypeFilter = "all" | "note" | "pdf" | "docx" | "txt";
-type StatusFilter = "all" | DocStatus;
-type SortBy = "date" | "name";
-type ViewMode = "grid" | "list";
-
-interface PreviewData {
-  filename: string;
-  file_type: string;
-  status: string;
-  content: string | null;
-  preview_type: string;
-  message?: string;
-  image_url?: string;
-  viewer_url?: string;
-  can_inline?: boolean;
-  download_url?: string;
-}
-
-interface NoteModalState {
-  mode: "create" | "edit";
-  doc?: Document;
-}
+type DocStatus = DocumentStatus;
 
 const TYPE_LABELS_LOCAL = TYPE_LABELS;
 
@@ -108,51 +97,6 @@ const SIDEBAR_TYPES: {
     icon: <FileText className="h-4 w-4 text-muted-foreground" />,
   },
 ];
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function FileIcon({ type, size = "md" }: { type: string; size?: "sm" | "md" }) {
-  const cls = size === "sm" ? "h-8 w-8" : "h-10 w-10";
-  switch (type) {
-    case "note":
-      return <FileText className={`${cls} text-fuchsia-500`} />;
-    case "pdf":
-      return <FileText className={`${cls} text-red-500`} />;
-    case "docx":
-      return <FileType className={`${cls} text-blue-500`} />;
-    case "txt":
-    case "md":
-    case "csv":
-    case "json":
-    case "html":
-      return <FileText className={`${cls} text-slate-500`} />;
-    case "png":
-    case "jpg":
-    case "jpeg":
-    case "gif":
-    case "webp":
-    case "svg":
-      return <ImageIcon className={`${cls} text-emerald-500`} />;
-    case "mp3":
-    case "wav":
-      return <Music className={`${cls} text-violet-500`} />;
-    case "mp4":
-    case "mov":
-      return <Film className={`${cls} text-pink-500`} />;
-    case "zip":
-    case "xlsx":
-    case "xls":
-    case "pptx":
-    case "ppt":
-      return <Archive className={`${cls} text-orange-500`} />;
-    default:
-      return <File className={`${cls} text-muted-foreground`} />;
-  }
-}
 
 export default function DocumentsPage() {
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -203,14 +147,8 @@ export default function DocumentsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [trashMode, setTrashMode] = useState(false);
-  const [trashDocs, setTrashDocs] = useState<Document[]>([]);
-  const [trashLoading, setTrashLoading] = useState(false);
   const [deletingDocIds, setDeletingDocIds] = useState<string[]>([]);
   const [deletingFolderIds, setDeletingFolderIds] = useState<string[]>([]);
-  const [trashAction, setTrashAction] = useState<{
-    id: string;
-    type: "purge" | "restore";
-  } | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
 
@@ -297,6 +235,13 @@ export default function DocumentsPage() {
   }, [currentFolderId, refreshFolderView, fetchTags]);
 
   useDocumentPolling(documents, setDocuments);
+
+  const onTrashRestored = useCallback(() => {
+    return refreshFolderView(currentFolderId);
+  }, [refreshFolderView, currentFolderId]);
+
+  const { trashDocs, trashLoading, trashAction, restoreDoc, purgeDoc } =
+    useTrash(trashMode, confirm, onTrashRestored);
 
   // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
   useEffect(() => {
@@ -410,61 +355,6 @@ export default function DocumentsPage() {
     }
     return counts;
   }, [documents]);
-
-  function putToR2WithProgress(
-    url: string,
-    file: File,
-    contentType: string,
-    onProgress: (percent: number) => void,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", url);
-      xhr.setRequestHeader("Content-Type", contentType);
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable)
-          onProgress(Math.round((e.loaded / e.total) * 100));
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else
-          reject(
-            new Error(`Tải lên kho lưu trữ thất bại (HTTP ${xhr.status})`),
-          );
-      };
-      xhr.onerror = () =>
-        reject(new Error("Mất kết nối khi tải lên kho lưu trữ"));
-      xhr.send(file);
-    });
-  }
-
-  async function waitForDocumentProcessing(
-    documentId: string,
-    onProgress?: (message: string) => void,
-  ): Promise<void> {
-    const maxWaitMs = 10 * 60 * 1000;
-    const start = Date.now();
-    while (Date.now() - start < maxWaitMs) {
-      const res = await fetch(`/api/documents/status?ids=${documentId}`);
-      if (!res.ok) break;
-      const updates = (await res.json()) as Record<
-        string,
-        { status: string; error_message: string | null }
-      >;
-      const update = updates[documentId];
-      if (!update) break;
-      if (update.status === "done") return;
-      if (update.status === "failed") {
-        throw new Error(update.error_message ?? "Tạo phụ đề thất bại");
-      }
-      onProgress?.(
-        update.status === "processing"
-          ? "Đang tạo phụ đề..."
-          : "Đang chờ xử lý...",
-      );
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-  }
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -738,52 +628,6 @@ export default function DocumentsPage() {
       }
     }
     setReprocessingOcr(false);
-  }
-
-  const fetchTrash = useCallback(async () => {
-    setTrashLoading(true);
-    const res = await fetch("/api/documents?trash=1");
-    if (res.ok) setTrashDocs(await res.json());
-    setTrashLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (trashMode) void fetchTrash();
-  }, [trashMode, fetchTrash]);
-
-  async function restoreDoc(documentId: string) {
-    setTrashAction({ id: documentId, type: "restore" });
-    try {
-      const res = await fetch(`/api/documents/${documentId}/restore`, {
-        method: "POST",
-      });
-      if (res.ok) {
-        setTrashDocs((prev) => prev.filter((d) => d.id !== documentId));
-        await refreshFolderView(currentFolderId);
-      }
-    } finally {
-      setTrashAction((prev) => (prev?.id === documentId ? null : prev));
-    }
-  }
-
-  async function purgeDoc(documentId: string) {
-    const ok = await confirm({
-      title: "Xóa vĩnh viễn?",
-      description: "Không thể khôi phục sau khi xóa.",
-      confirmLabel: "Xóa vĩnh viễn",
-    });
-    if (!ok) return;
-    setTrashAction({ id: documentId, type: "purge" });
-    try {
-      const res = await fetch(`/api/documents/${documentId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setTrashDocs((prev) => prev.filter((d) => d.id !== documentId));
-      }
-    } finally {
-      setTrashAction((prev) => (prev?.id === documentId ? null : prev));
-    }
   }
 
   async function handleDelete(documentId: string) {

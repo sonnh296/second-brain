@@ -214,6 +214,13 @@ export default function ProfilePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
+                {!stats.usage_tracking_available && (
+                  <p className="text-sm text-amber-700 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                    Thống kê token chưa sẵn sàng — cần chạy{' '}
+                    <code className="text-xs">001_schema_v2.sql</code> (bảng{' '}
+                    <code className="text-xs">usage_logs</code>) trong Supabase SQL Editor.
+                  </p>
+                )}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">30 ngày gần đây</p>
                   <div className="grid grid-cols-3 gap-2">

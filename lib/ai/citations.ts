@@ -15,6 +15,9 @@ const CITATIONS_REGEX = /<!--CITATIONS:(\[.*?\])-->\s*$/
 /**
  * Parse model citation block and strip it from visible content.
  * Format: <!--CITATIONS:["file.txt:0","other.pdf:3"]-->
+ *
+ * Trust policy: only return sources the model explicitly cited.
+ * Missing/malformed blocks yield empty citations (no silent top-N fallback).
  */
 export function parseCitationsFromResponse(
   text: string,
@@ -22,10 +25,7 @@ export function parseCitationsFromResponse(
 ): { content: string; citedSources: CitedSource[] } {
   const match = text.match(CITATIONS_REGEX)
   if (!match) {
-    return {
-      content: text,
-      citedSources: fallbackCitations(availableSources, 3),
-    }
+    return { content: text, citedSources: [] }
   }
 
   const content = text.replace(CITATIONS_REGEX, '').trimEnd()
@@ -55,32 +55,8 @@ export function parseCitationsFromResponse(
       }
     }
 
-    if (citedSources.length > 0) {
-      return { content, citedSources }
-    }
+    return { content, citedSources }
   } catch {
-    // fall through to fallback
+    return { content, citedSources: [] }
   }
-
-  return {
-    content,
-    citedSources: fallbackCitations(availableSources, 3),
-  }
-}
-
-function fallbackCitations(
-  sources: RetrievedSource[],
-  limit: number
-): CitedSource[] {
-  return sources
-    .slice()
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((s) => ({
-      filename: s.filename,
-      chunk_index: s.chunk_index,
-      document_id: s.document_id,
-      file_type: s.file_type,
-      page: s.page,
-    }))
 }

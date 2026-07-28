@@ -30,7 +30,7 @@ import { logger } from '@/lib/logger'
 import { DEFAULT_CHAT_MODEL, isValidChatModel } from '@/lib/ai/models'
 import { persistChatImages, buildMultimodalHistory } from '@/lib/chat/attachments'
 import { buildNoteTools, NOTE_TOOLS_PROMPT } from '@/lib/chat/note-tools'
-import { fromAiSdkUsage, logUsage } from '@/lib/usage/log'
+import { fromAiSdkSteps, logUsage } from '@/lib/usage/log'
 
 const CHAT_HISTORY_LIMIT = Number(process.env.CHAT_HISTORY_LIMIT ?? 10)
 
@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
         cacheControl: { type: 'ephemeral' },
       },
     },
-    onFinish: async ({ text, usage }) => {
+    onFinish: async ({ text, usage, steps }) => {
       try {
         // Tool-only turns often return empty text; keep a visible reply when proposals exist.
         const rawText =
@@ -320,13 +320,18 @@ export async function POST(req: NextRequest) {
             : '')
         const { content, citedSources } = parseCitationsFromResponse(rawText, sources)
 
-        const chatTokens = fromAiSdkUsage(usage)
+        const chatTokens = fromAiSdkSteps(steps, usage)
         await logUsage({
           userId,
           purpose: 'chat',
           model: modelId,
           ...chatTokens,
-          metadata: { session_id, mode, document_management: documentManagement },
+          metadata: {
+            session_id,
+            mode,
+            document_management: documentManagement,
+            steps: steps?.length ?? 1,
+          },
         })
 
         // Push citations to the client immediately so badges render without a reload

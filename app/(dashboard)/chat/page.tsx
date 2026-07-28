@@ -5,13 +5,27 @@ import { useChat } from 'ai/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { MarkdownContent } from '@/components/markdown-content'
 import { TypingIndicator } from '@/components/typing-indicator'
+import { ImagePreviewModal } from '@/components/chat/image-preview-modal'
+import { SourceBadge } from '@/components/chat/source-badge'
+import { PendingActionCard } from '@/components/chat/pending-action-card'
+import type { AttachedImage, ChatMode, PreviewModal, SessionMessage } from '@/components/chat/types'
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, type ChatModelId } from '@/lib/ai/models'
-import { isImageType } from '@/lib/upload/file-types'
 import { useConfirm } from '@/components/ui/confirm-dialog'
+import {
+  createDraftSession,
+  isDraftSession,
+  mapSessionMessages,
+  DRAFT_SESSION_ID,
+} from '@/lib/chat/draft-session'
+import {
+  ALLOWED_MEDIA,
+  MAX_ATTACH_BYTES,
+  MAX_ATTACH_IMAGES,
+  fileToAttachedImage,
+} from '@/lib/chat/image-client'
 import type {
   ChatSession,
   CitedSource,
@@ -19,334 +33,8 @@ import type {
   PendingChatAction,
 } from '@/lib/db/types'
 
-const DRAFT_SESSION_ID = '__draft__'
-
-function createDraftSession(): ChatSession {
-  return {
-    id: DRAFT_SESSION_ID,
-    user_id: '',
-    title: 'Cuộc trò chuyện mới',
-    created_at: new Date().toISOString(),
-  }
-}
-
-function isDraftSession(session: ChatSession | null): boolean {
-  return !!session && session.id === DRAFT_SESSION_ID
-}
-
-// ─── Image Preview Modal ──────────────────────────────────────────────────────
-type PreviewModal =
-  | { open: false }
-  | { open: true; src: string; filename: string; attachmentId?: string }
-
-function ImagePreviewModal({
-  modal,
-  onClose,
-}: {
-  modal: PreviewModal
-  onClose: () => void
-}) {
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
-
-  if (!modal.open) return null
-
-  async function saveToLibrary() {
-    if (!modal.open || !modal.attachmentId) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/chat/attachments/${modal.attachmentId}/save-to-library`, {
-        method: 'POST',
-      })
-      const data = await res.json().catch(() => ({}))
-      setSaveMessage(
-        res.ok ? `Đã lưu "${data.filename}" vào kho tri thức` : (data.error ?? 'Không lưu được')
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-6"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-4xl max-h-[90vh] rounded-xl overflow-hidden shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={modal.src}
-          alt={modal.filename}
-          className="max-h-[80vh] sm:max-h-[85vh] max-w-full mx-auto object-contain bg-background"
-        />
-        <div className="absolute top-2 right-2 flex gap-2 flex-wrap justify-end">
-          {modal.attachmentId && (
-            <button
-              className="rounded-md bg-background/80 px-3 py-1.5 text-xs backdrop-blur hover:bg-background transition-colors disabled:opacity-50"
-              disabled={saving}
-              onClick={(e) => {
-                e.stopPropagation()
-                void saveToLibrary()
-              }}
-            >
-              {saving ? 'Đang lưu…' : '💾 Lưu vào kho'}
-            </button>
-          )}
-          <a
-            href={modal.src}
-            download={modal.filename}
-            className="rounded-md bg-background/80 px-3 py-1.5 text-xs backdrop-blur hover:bg-background transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            ↓ Tải về
-          </a>
-          <button
-            className="rounded-md bg-background/80 px-3 py-1.5 text-xs backdrop-blur hover:bg-background transition-colors"
-            onClick={onClose}
-          >
-            ✕ Đóng
-          </button>
-        </div>
-        <p className="absolute bottom-0 left-0 right-0 bg-black/50 px-4 py-1.5 text-xs text-white truncate">
-          {saveMessage ?? modal.filename}
-        </p>
-      </div>
-    </div>
-  )
-}
-
-// ─── Source Badge ─────────────────────────────────────────────────────────────
-function SourceBadge({
-  src,
-  onImageClick,
-}: {
-  src: CitedSource
-  onImageClick: (src: CitedSource) => void
-}) {
-  const isImage = isImageType(src.file_type ?? '')
-  const isNote = src.file_type === 'note'
-  const isPdf = src.file_type === 'pdf'
-  const hasLink = !!src.document_id
-  const pageAnchor = isPdf && src.page ? `#page=${src.page}` : ''
-
-  const handleClick = () => {
-    if (!hasLink || !src.document_id) return
-    if (isImage) {
-      onImageClick(src)
-    } else if (isNote) {
-      window.open('/documents', '_blank')
-    } else {
-      window.open(`/api/documents/${src.document_id}/download${pageAnchor}`, '_blank')
-    }
-  }
-
-  const title = !hasLink
-    ? undefined
-    : isImage
-      ? 'Xem ảnh'
-      : isNote
-        ? 'Mở ghi chú'
-        : isPdf && src.page
-          ? `Mở trang ${src.page} trong tab mới`
-          : 'Mở tài liệu trong tab mới'
-
-  return (
-    <Badge
-      variant="outline"
-      className={`text-xs gap-1 select-none ${
-        hasLink
-          ? 'cursor-pointer hover:bg-accent hover:border-accent-foreground/30 transition-colors'
-          : 'opacity-60'
-      }`}
-      onClick={hasLink ? handleClick : undefined}
-      title={title}
-    >
-      <span>{isImage ? '🖼️' : isNote ? '📝' : '📄'}</span>
-      <span className="max-w-[120px] sm:max-w-[160px] truncate">{src.filename}</span>
-      {isPdf && src.page ? <span className="opacity-60">tr.{src.page}</span> : null}
-      {hasLink && <span className="opacity-40 text-[10px]">↗</span>}
-    </Badge>
-  )
-}
-
-// ─── Pending action confirmation card ─────────────────────────────────────────
-const ACTION_LABELS: Record<string, { label: string; icon: string; destructive: boolean }> = {
-  update_note: { label: 'Cập nhật ghi chú', icon: '✏️', destructive: false },
-  delete_note: { label: 'Xóa ghi chú', icon: '🗑️', destructive: true },
-  rename_document: { label: 'Đổi tên tài liệu', icon: '🏷️', destructive: false },
-  move_document: { label: 'Di chuyển tài liệu', icon: '📁', destructive: false },
-  tag_document: { label: 'Gắn tag', icon: '🔖', destructive: false },
-}
-
-function PendingActionCard({
-  action,
-  busy,
-  onConfirm,
-  onCancel,
-}: {
-  action: PendingChatAction
-  busy: boolean
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  const meta = ACTION_LABELS[action.action_type] ?? {
-    label: action.action_type,
-    icon: '⚙️',
-    destructive: false,
-  }
-  return (
-    <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2.5 mb-2">
-      <div className="flex items-start gap-2">
-        <span className="text-base leading-none mt-0.5">{meta.icon}</span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">
-            {meta.label}: <span className="break-words">{action.filename}</span>
-          </p>
-          {action.preview && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-3 whitespace-pre-wrap">
-              {action.preview}
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="flex gap-2 mt-2 justify-end">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs rounded-md border border-input bg-background hover:bg-muted transition-colors disabled:opacity-50"
-        >
-          Hủy
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onConfirm}
-          className={`px-3 py-1.5 text-xs rounded-md text-white transition-colors disabled:opacity-50 ${
-            meta.destructive ? 'bg-destructive hover:bg-destructive/90' : 'bg-primary hover:bg-primary/90'
-          }`}
-        >
-          {busy ? 'Đang xử lý…' : 'Xác nhận'}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Attached Image type ──────────────────────────────────────────────────────
-type AttachedImage = {
-  id: string
-  file: File
-  previewUrl: string
-  base64: string
-  mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-}
-
 const MODEL_STORAGE_KEY = 'second-brain-chat-model'
 const CHAT_MODE_STORAGE_KEY = 'second-brain-chat-mode'
-
-type ChatMode = 'knowledge' | 'general'
-
-type SessionMessage = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  cited_sources?: CitedSource[]
-  attachments?: MessageAttachmentMeta[]
-}
-
-const MAX_ATTACH_IMAGES = 5
-const MAX_ATTACH_BYTES = 5 * 1024 * 1024
-const ALLOWED_MEDIA = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const
-
-function mapSessionMessages(
-  messages: {
-    id: string
-    role: string
-    content: string
-    cited_sources?: CitedSource[]
-    attachments?: MessageAttachmentMeta[]
-  }[]
-): SessionMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role as 'user' | 'assistant',
-    content: m.content,
-    cited_sources: m.cited_sources,
-    attachments: m.attachments ?? [],
-  }))
-}
-
-/** Claude vision xử lý tối đa ~1568px — resize trước khi gửi để giảm token/băng thông. */
-const MAX_IMAGE_DIMENSION = 1568
-const RESIZE_QUALITY = 0.85
-
-async function downscaleImage(
-  file: File
-): Promise<{ blob: Blob; mediaType: AttachedImage['mediaType'] }> {
-  // GIF giữ nguyên để không mất animation
-  if (file.type === 'image/gif') {
-    return { blob: file, mediaType: 'image/gif' }
-  }
-
-  try {
-    const bitmap = await createImageBitmap(file)
-    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(bitmap.width, bitmap.height))
-
-    // Ảnh đã nhỏ và nhẹ thì gửi nguyên bản
-    if (scale === 1 && file.size <= 1024 * 1024) {
-      bitmap.close()
-      return { blob: file, mediaType: file.type as AttachedImage['mediaType'] }
-    }
-
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      bitmap.close()
-      return { blob: file, mediaType: file.type as AttachedImage['mediaType'] }
-    }
-    // Nền trắng cho PNG trong suốt khi chuyển sang JPEG
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    bitmap.close()
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', RESIZE_QUALITY)
-    )
-    if (!blob) {
-      return { blob: file, mediaType: file.type as AttachedImage['mediaType'] }
-    }
-    return { blob, mediaType: 'image/jpeg' }
-  } catch {
-    return { blob: file, mediaType: file.type as AttachedImage['mediaType'] }
-  }
-}
-
-async function fileToAttachedImage(file: File): Promise<AttachedImage> {
-  const { blob, mediaType } = await downscaleImage(file)
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      resolve(result.split(',')[1])
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-  return {
-    id: crypto.randomUUID(),
-    file,
-    previewUrl: URL.createObjectURL(blob),
-    base64,
-    mediaType,
-  }
-}
 
 export default function ChatPage() {
   const { confirm, dialog: confirmDialog } = useConfirm()

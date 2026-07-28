@@ -49,7 +49,11 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/api/auth')
 
   const isPublicAuthApi =
-    pathname === '/api/auth/login' || pathname === '/api/auth/signout'
+    pathname === '/api/auth/login' ||
+    pathname === '/api/auth/signout' ||
+    pathname === '/api/auth/signup' ||
+    pathname === '/api/auth/confirm' ||
+    pathname === '/api/auth/google'
 
   if ((isProtectedPage || isProtectedApi) && !isPublicAuthApi && !user) {
     if (isProtectedApi) {

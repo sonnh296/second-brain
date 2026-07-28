@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { enqueueIngestionJob } from '@/lib/queue'
-import { deleteByDocument, updateDocumentFilename } from '@/lib/vector'
+import { updateDocumentFilename } from '@/lib/vector'
+import { softDeleteDocument } from '@/lib/documents/soft-delete'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -117,24 +118,10 @@ async function executeDeleteNote(
     return { ok: false, message: 'Ghi chú không còn tồn tại hoặc đã bị xóa.' }
   }
 
-  // Soft delete: keep the row (restorable), remove from search indexes
-  const { error } = await supabase
-    .from('documents')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', documentId)
-    .eq('user_id', userId)
-
-  if (error) {
-    logger.error('chat action delete_note failed', { err: error, documentId, userId })
+  const result = await softDeleteDocument(supabase, userId, documentId)
+  if (!result.ok) {
     return { ok: false, message: 'Không xóa được ghi chú.' }
   }
-
-  try {
-    await deleteByDocument(userId, documentId)
-  } catch (err) {
-    logger.error('Qdrant cleanup on soft delete failed', { err, documentId, userId })
-  }
-  await supabase.from('document_chunks').delete().eq('document_id', documentId).eq('user_id', userId)
 
   return {
     ok: true,

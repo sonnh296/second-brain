@@ -46,6 +46,8 @@ export interface DocumentChunk {
   chunk_text: string
   chunk_index: number
   qdrant_point_id: string
+  /** PDF page number when known. */
+  page: number | null
   created_at: string
 }
 

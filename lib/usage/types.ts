@@ -28,6 +28,8 @@ export type ProfileStats = {
   username: string
   role: string
   storage: StorageStats
+  /** False when usage_logs table is missing or unreadable */
+  usage_tracking_available: boolean
   tokens: {
     all_time: TokenTotals
     last_30_days: TokenTotals

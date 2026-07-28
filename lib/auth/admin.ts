@@ -47,12 +47,10 @@ export async function isAdmin(supabase: SupabaseClient, userId: string): Promise
 export async function listUsersWithProfiles(
   service: SupabaseClient
 ): Promise<UserProfile[]> {
-  const { data: listData, error } = await service.auth.admin.listUsers()
+  const { data: listData, error } = await service.auth.admin.listUsers({ perPage: 1000 })
   if (error) throw error
 
-  const authUsers = (listData?.users ?? []).filter((u) =>
-    u.email?.endsWith('@users.secondbrain.local')
-  )
+  const authUsers = listData?.users ?? []
   if (authUsers.length === 0) return []
 
   const ids = authUsers.map((u) => u.id)
