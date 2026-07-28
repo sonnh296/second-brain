@@ -9,6 +9,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
+        // /tmp is a ~1GB RAM-backed tmpfs on the server — keep temp files on disk
+        TMPDIR: '/home/ec2-user/tmp',
       },
       instances: 1,
       autorestart: true,
@@ -24,6 +26,7 @@ module.exports = {
       cwd: __dirname,
       env: {
         NODE_ENV: 'production',
+        TMPDIR: '/home/ec2-user/tmp',
       },
       instances: 1,
       autorestart: true,
