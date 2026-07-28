@@ -21,19 +21,21 @@ module.exports = {
     },
     {
       name: 'second-brain-worker',
-      script: 'npm',
-      args: 'run worker',
+      script: 'node_modules/.bin/tsx',
+      args: '--env-file=.env.local workers/ingestion-worker.ts',
       cwd: __dirname,
       env: {
         NODE_ENV: 'production',
         TMPDIR: '/home/ec2-user/tmp',
       },
       instances: 1,
+      exec_mode: 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '1G',
       error_file: './logs/worker-error.log',
       out_file: './logs/worker-out.log',
+      merge_logs: true,
     },
     {
       name: 'second-brain-orphan-cleanup',

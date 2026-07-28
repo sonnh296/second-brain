@@ -58,12 +58,15 @@ export async function POST(
     })
     .eq('id', id)
 
-  await enqueueIngestionJob({
-    document_id: doc.id,
-    r2_key: doc.r2_key,
-    file_type: doc.file_type,
-    user_id: user.id,
-  })
+  await enqueueIngestionJob(
+    {
+      document_id: doc.id,
+      r2_key: doc.r2_key,
+      file_type: doc.file_type,
+      user_id: user.id,
+    },
+    { force: true }
+  )
 
   return NextResponse.json({ success: true, status: 'pending' })
 }

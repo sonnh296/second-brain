@@ -84,12 +84,15 @@ export async function POST(req: NextRequest) {
     .update({ file_size_bytes: head.size, file_type: validation.fileType })
     .eq('id', doc.id)
 
-  await enqueueIngestionJob({
-    document_id: doc.id,
-    r2_key: doc.r2_key,
-    file_type: validation.fileType,
-    user_id: userId,
-  })
+  await enqueueIngestionJob(
+    {
+      document_id: doc.id,
+      r2_key: doc.r2_key,
+      file_type: validation.fileType,
+      user_id: userId,
+    },
+    { force: true }
+  )
 
   logger.info('Direct upload completed, queued for ingestion', {
     userId,

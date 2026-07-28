@@ -242,9 +242,18 @@ async function indexExtractedText(
     })
   }
 
+  const storedContent =
+    extraUpdates && 'extracted_content' in extraUpdates
+      ? (extraUpdates.extracted_content as string | null)
+      : rawText
+
   await supabase
     .from('documents')
-    .update({ status: 'done', chunk_count: chunks.length, extracted_content: rawText })
+    .update({
+      status: 'done',
+      chunk_count: chunks.length,
+      extracted_content: storedContent,
+    })
     .eq('id', documentId)
 }
 
@@ -284,6 +293,12 @@ export async function runIngestionPipeline(
     const canTranscribe = isTranscriptionEnabled() && isTranscribableType(fileType)
 
     if (!isIndexableType(fileType) && !canOcr && !canTranscribe) {
+      // Media files must never silently skip when transcription is supposed to be on.
+      if (isTranscribableType(fileType) && !isTranscriptionEnabled()) {
+        throw new Error(
+          'Transcription chưa được bật (cần OPENAI_API_KEY / TRANSCRIPTION_ENABLED)'
+        )
+      }
       await markStorageOnlyDone(supabase, documentId)
       logger.info('Storage-only file marked done (no indexing)', {
         documentId,

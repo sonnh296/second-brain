@@ -38,7 +38,7 @@ import {
   FolderBreadcrumb,
 } from '@/components/documents/folder-items'
 import { useDocumentPolling } from '@/hooks/use-document-polling'
-import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
+import { TYPE_LABELS, isImageType, isTranscribableType } from '@/lib/upload/file-types'
 import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
 
 type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
@@ -471,8 +471,37 @@ export default function DocumentsPage() {
     setPreviewLoading(true)
     setPreview(null)
     const res = await fetch(`/api/documents/${doc.id}/preview`)
-    if (res.ok) setPreview(await res.json())
+    const previewData = res.ok ? await res.json() : null
+    if (previewData) setPreview(previewData)
     setPreviewLoading(false)
+
+    // Media marked done without a transcript (e.g. processed before transcription
+    // was enabled) — automatically re-queue subtitle generation, no button needed.
+    const needsSubtitles =
+      isTranscribableType(doc.file_type) &&
+      doc.status === 'done' &&
+      !previewData?.content &&
+      doc.chunk_count === 0
+    if (needsSubtitles) {
+      const re = await fetch(`/api/documents/${doc.id}/reprocess`, { method: 'POST' })
+      if (re.ok) {
+        setSelectedDoc({ ...doc, status: 'pending', chunk_count: null })
+        setPreview({
+          ...(previewData ?? {
+            filename: doc.filename,
+            file_type: doc.file_type,
+            status: 'pending',
+            content: null,
+            preview_type: 'video',
+            viewer_url: `/api/documents/${doc.id}/download`,
+          }),
+          status: 'pending',
+          content: null,
+          message: 'Đang tự động tạo phụ đề...',
+        })
+        await refreshFolderView(currentFolderId)
+      }
+    }
   }
 
   function closePreview() {
