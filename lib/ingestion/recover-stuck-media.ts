@@ -4,6 +4,7 @@ import { isTranscribableType } from '../upload/file-types'
 import { logger } from '../logger'
 
 const STUCK_PENDING_MS = 2 * 60 * 1000
+const RECOVERY_BATCH_LIMIT = 50
 
 /**
  * Re-queue media that never finished transcription (e.g. /api/upload/complete
@@ -11,21 +12,41 @@ const STUCK_PENDING_MS = 2 * 60 * 1000
  */
 export async function recoverStuckMediaTranscription(): Promise<number> {
   const supabase = createServiceSupabaseClient()
-  const { data: docs, error } = await supabase
+  const cutoffIso = new Date(Date.now() - STUCK_PENDING_MS).toISOString()
+
+  const { data: pendingDocs, error: pendingError } = await supabase
     .from('documents')
     .select('id, filename, file_type, r2_key, user_id, status, chunk_count, extracted_content, error_message, created_at')
     .in('file_type', ['mp4', 'mov', 'mp3', 'wav'])
-    .in('status', ['pending', 'processing', 'done'])
+    .eq('status', 'pending')
     .is('deleted_at', null)
+    .is('error_message', null)
+    .lt('created_at', cutoffIso)
+    .limit(RECOVERY_BATCH_LIMIT)
 
-  if (error) {
-    logger.error('recoverStuckMedia: query failed', { err: error.message })
+  if (pendingError) {
+    logger.error('recoverStuckMedia: pending query failed', { err: pendingError.message })
     return 0
   }
 
-  let recovered = 0
-  const now = Date.now()
+  const { data: doneDocs, error: doneError } = await supabase
+    .from('documents')
+    .select('id, filename, file_type, r2_key, user_id, status, chunk_count, extracted_content, error_message, created_at')
+    .in('file_type', ['mp4', 'mov', 'mp3', 'wav'])
+    .eq('status', 'done')
+    .is('deleted_at', null)
+    .is('error_message', null)
+    .is('extracted_content', null)
+    .limit(RECOVERY_BATCH_LIMIT)
 
+  if (doneError) {
+    logger.error('recoverStuckMedia: done query failed', { err: doneError.message })
+    return 0
+  }
+
+  const docs = [...(pendingDocs ?? []), ...(doneDocs ?? [])]
+
+  let recovered = 0
   for (const doc of docs ?? []) {
     if (!isTranscribableType(doc.file_type)) continue
     if (!doc.r2_key || doc.r2_key === 'pending') continue
@@ -35,9 +56,7 @@ export async function recoverStuckMediaTranscription(): Promise<number> {
     const hasChunks = (doc.chunk_count ?? 0) > 0
     if (hasTranscript && hasChunks) continue
 
-    const createdMs = new Date(doc.created_at).getTime()
-    const pendingTooLong =
-      doc.status === 'pending' && now - createdMs > STUCK_PENDING_MS
+    const pendingTooLong = doc.status === 'pending'
     const doneWithoutSubtitles =
       doc.status === 'done' && !hasTranscript && !hasChunks
 

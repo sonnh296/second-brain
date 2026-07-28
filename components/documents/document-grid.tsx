@@ -30,6 +30,23 @@ function StatusBadge({ status }: { status: DocStatus }) {
   )
 }
 
+function ItemBusyOverlay({ label }: { label: string }) {
+  return (
+    <div
+      className="absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] bg-background/85 backdrop-blur-[1px]"
+      aria-live="polite"
+    >
+      <div className="flex flex-col items-center gap-1.5 px-2">
+        <div
+          className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin"
+          aria-hidden
+        />
+        <span className="text-[10px] text-muted-foreground text-center leading-tight">{label}</span>
+      </div>
+    </div>
+  )
+}
+
 export function DriveGridItem({
   doc,
   selected,
@@ -37,6 +54,8 @@ export function DriveGridItem({
   onEdit,
   onDelete,
   fileIcon,
+  busy,
+  busyLabel = 'Đang xóa...',
 }: {
   doc: Document
   selected: boolean
@@ -44,15 +63,18 @@ export function DriveGridItem({
   onEdit?: () => void
   onDelete: () => void
   fileIcon: React.ReactNode
+  busy?: boolean
+  busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div
       className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 ${
         selected ? 'ring-2 ring-primary border-primary/50' : ''
-      }`}
-      onClick={onOpen}
+      } ${busy ? 'pointer-events-none opacity-90' : ''}`}
+      onClick={busy ? undefined : onOpen}
     >
+      {busy && <ItemBusyOverlay label={busyLabel} />}
       <div className="flex flex-col items-center text-center gap-2">
         {fileIcon}
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{doc.filename}</p>
@@ -69,7 +91,7 @@ export function DriveGridItem({
             )}
           </div>
         )}
-        <StatusBadge status={doc.status} />
+        {doc.status !== 'done' && <StatusBadge status={doc.status} />}
       </div>
       <button
         type="button"
@@ -116,6 +138,8 @@ export function DriveListItem({
   onDelete,
   fileIcon,
   formatBytes,
+  busy,
+  busyLabel = 'Đang xóa...',
 }: {
   doc: Document
   selected: boolean
@@ -124,14 +148,17 @@ export function DriveListItem({
   onDelete: () => void
   fileIcon: React.ReactNode
   formatBytes: (bytes: number) => string
+  busy?: boolean
+  busyLabel?: string
 }) {
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 ${
+      className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 ${
         selected ? 'bg-primary/5 border-primary/40' : 'bg-card'
-      }`}
-      onClick={onOpen}
+      } ${busy ? 'pointer-events-none opacity-90' : ''}`}
+      onClick={busy ? undefined : onOpen}
     >
+      {busy && <ItemBusyOverlay label={busyLabel} />}
       {fileIcon}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{doc.filename}</p>
@@ -152,7 +179,7 @@ export function DriveListItem({
       <span className="text-xs text-muted-foreground shrink-0 hidden md:block">
         {new Date(doc.created_at).toLocaleDateString('vi-VN')}
       </span>
-      <StatusBadge status={doc.status} />
+      {doc.status !== 'done' && <StatusBadge status={doc.status} />}
       {onEdit && (
         <Button
           variant="ghost"

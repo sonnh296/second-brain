@@ -7,6 +7,7 @@ export interface IngestionJobData {
   r2_key: string
   file_type: string
   user_id: string
+  manual_content?: string
 }
 
 export interface DocumentCleanupJobData {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { ChangePasswordForm } from '@/components/auth/change-password-form'
 import {
   formatBytes,
@@ -47,10 +48,75 @@ function TokenStat({ label, value }: { label: string; value: number }) {
   )
 }
 
+function SkeletonBar({ className }: { className?: string }) {
+  return <div className={`rounded-md bg-muted animate-pulse ${className ?? 'h-3'}`} />
+}
+
+function ProfileStatsSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Đang tải thống kê">
+      <Card>
+        <CardHeader className="pb-2">
+          <SkeletonBar className="h-4 w-24" />
+          <SkeletonBar className="h-3 w-32 mt-2" />
+        </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <SkeletonBar className="h-4 w-40" />
+          <SkeletonBar className="h-3 w-56 mt-2" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <div className="flex justify-between">
+              <SkeletonBar className="h-3 w-20" />
+              <SkeletonBar className="h-3 w-28" />
+            </div>
+            <SkeletonBar className="h-2 w-full rounded-full" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="rounded-lg border px-3 py-2 space-y-2">
+                <SkeletonBar className="h-3 w-16" />
+                <SkeletonBar className="h-4 w-20" />
+                <SkeletonBar className="h-3 w-24" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <SkeletonBar className="h-4 w-28" />
+          <SkeletonBar className="h-3 w-64 mt-2" />
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {[1, 2].map((section) => (
+            <div key={section}>
+              <SkeletonBar className="h-3 w-32 mb-2" />
+              <div className="grid grid-cols-3 gap-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-lg border px-3 py-2.5 space-y-2">
+                    <SkeletonBar className="h-3 w-12" />
+                    <SkeletonBar className="h-5 w-16" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export default function ProfilePage() {
   const [stats, setStats] = useState<ProfileStats | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -83,12 +149,10 @@ export default function ProfilePage() {
           </p>
         </div>
 
-        {loading && (
-          <p className="text-sm text-muted-foreground">Đang tải thống kê...</p>
-        )}
+        {loading && <ProfileStatsSkeleton />}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {stats && (
+        {!loading && stats && (
           <>
             <Card>
               <CardHeader className="pb-2">
@@ -251,9 +315,44 @@ export default function ProfilePage() {
             <CardDescription>Mật khẩu mới cần ít nhất 6 ký tự</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChangePasswordForm />
+            <Button type="button" size="sm" variant="outline" onClick={() => setShowPasswordDialog(true)}>
+              Đổi mật khẩu
+            </Button>
           </CardContent>
         </Card>
+
+        {showPasswordDialog && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="change-password-title"
+            onClick={() => setShowPasswordDialog(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowPasswordDialog(false)
+            }}
+          >
+            <Card
+              className="w-full max-w-sm shadow-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle id="change-password-title" className="text-base">
+                  Đổi mật khẩu
+                </CardTitle>
+                <CardDescription>Nhập mật khẩu hiện tại và mật khẩu mới</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChangePasswordForm
+                  onClose={() => setShowPasswordDialog(false)}
+                  onSuccess={() => {
+                    setTimeout(() => setShowPasswordDialog(false), 1200)
+                  }}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   )

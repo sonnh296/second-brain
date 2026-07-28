@@ -11,8 +11,7 @@ import {
   quotaStatusCode,
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/upload-limits'
-import { MAX_UPLOAD_DESCRIPTION_LENGTH } from '@/lib/upload/create-upload-stream'
-import { typeFromExtension, mimeForType } from '@/lib/upload/file-types'
+import { MAX_DOCUMENT_DESCRIPTION_LENGTH, typeFromExtension, mimeForType } from '@/lib/upload/file-types'
 import { logger } from '@/lib/logger'
 
 /**
@@ -66,7 +65,7 @@ export async function POST(req: NextRequest) {
   }
 
   const description = body.description?.trim()
-    ? body.description.trim().slice(0, MAX_UPLOAD_DESCRIPTION_LENGTH)
+    ? body.description.trim().slice(0, MAX_DOCUMENT_DESCRIPTION_LENGTH)
     : null
 
   let folderId: string | null = null

@@ -24,12 +24,14 @@ const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379'
 // Separate ioredis for graceful shutdown — BullMQ uses its own bundled ioredis internally
 const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null })
 
-const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY ?? 1)
+// A small amount of parallelism keeps short text / note jobs from sitting
+// behind long media transcriptions while still remaining conservative on RAM.
+const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY ?? 2)
 
 const ingestionWorker = new Worker<IngestionJobData>(
   'ingestion',
   async (job) => {
-    const { document_id, r2_key, file_type, user_id } = job.data
+    const { document_id, r2_key, file_type, user_id, manual_content } = job.data
     logger.info('Processing ingestion job', {
       jobId: job.id,
       documentId: document_id,
@@ -38,7 +40,7 @@ const ingestionWorker = new Worker<IngestionJobData>(
 
     const filename = r2_key.split('/').pop() ?? 'unknown'
 
-    await runIngestionPipeline(document_id, r2_key, file_type, user_id, filename)
+    await runIngestionPipeline(document_id, r2_key, file_type, user_id, filename, manual_content)
     logger.info('Ingestion job completed', {
       jobId: job.id,
       documentId: document_id,

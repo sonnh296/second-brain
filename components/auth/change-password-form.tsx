@@ -5,7 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
-export function ChangePasswordForm() {
+type ChangePasswordFormProps = {
+  onClose?: () => void
+  onSuccess?: () => void
+}
+
+export function ChangePasswordForm({ onClose, onSuccess }: ChangePasswordFormProps) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -45,10 +50,11 @@ export function ChangePasswordForm() {
     setCurrentPassword('')
     setNewPassword('')
     setConfirmPassword('')
+    onSuccess?.()
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3 max-w-md">
+    <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-1.5">
         <Label htmlFor="current-password" className="text-xs">
           Mật khẩu hiện tại
@@ -92,9 +98,16 @@ export function ChangePasswordForm() {
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {success && <p className="text-sm text-emerald-600">{success}</p>}
-      <Button type="submit" size="sm" disabled={loading}>
-        {loading ? 'Đang lưu...' : 'Đổi mật khẩu'}
-      </Button>
+      <div className="flex justify-end gap-2 pt-1">
+        {onClose && (
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={loading}>
+            Hủy
+          </Button>
+        )}
+        <Button type="submit" size="sm" disabled={loading}>
+          {loading ? 'Đang lưu...' : 'Đổi mật khẩu'}
+        </Button>
+      </div>
     </form>
   )
 }

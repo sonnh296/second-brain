@@ -4,14 +4,14 @@ import { flattenDocumentTags } from '@/lib/db/document-tags'
 import { logger } from '@/lib/logger'
 
 const DOCUMENT_SELECT = `
-  id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, extracted_content, ocr_text, deleted_at, created_at,
+  id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, deleted_at, created_at,
   document_tags (
     tags (id, name, color)
   )
 `
 
 const DOCUMENT_SELECT_LEGACY = `
-  id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, extracted_content, ocr_text, created_at,
+  id, filename, file_type, status, error_message, file_size_bytes, chunk_count, description, folder_id, created_at,
   document_tags (
     tags (id, name, color)
   )

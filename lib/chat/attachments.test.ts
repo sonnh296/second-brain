@@ -11,7 +11,7 @@ describe('chatAttachmentKey', () => {
 })
 
 describe('HISTORY_IMAGE_CAP', () => {
-  it('caps history images at 8', () => {
-    expect(HISTORY_IMAGE_CAP).toBe(8)
+  it('defaults to 4 for cost control', () => {
+    expect(HISTORY_IMAGE_CAP).toBe(4)
   })
 })

@@ -4,22 +4,46 @@ import { useState } from 'react'
 import { Folder, MoreVertical } from 'lucide-react'
 import type { Folder as FolderType } from '@/lib/db/types'
 
+function FolderBusyOverlay({ label }: { label: string }) {
+  return (
+    <div
+      className="absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] bg-background/85 backdrop-blur-[1px]"
+      aria-live="polite"
+    >
+      <div className="flex flex-col items-center gap-1.5 px-2">
+        <div
+          className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin"
+          aria-hidden
+        />
+        <span className="text-[10px] text-muted-foreground text-center leading-tight">{label}</span>
+      </div>
+    </div>
+  )
+}
+
 export function FolderGridItem({
   folder,
   onOpen,
   onDelete,
+  busy,
+  busyLabel = 'Đang xóa...',
 }: {
   folder: FolderType
   onOpen: () => void
   onDelete: () => void
+  busy?: boolean
+  busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
     <div
-      className="group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-amber-500/40"
-      onClick={onOpen}
+      className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-amber-500/40 ${
+        busy ? 'pointer-events-none opacity-90' : ''
+      }`}
+      onClick={busy ? undefined : onOpen}
     >
+      {busy && <FolderBusyOverlay label={busyLabel} />}
       <div className="flex flex-col items-center text-center gap-2">
         <Folder className="h-10 w-10" style={{ color: folder.color }} />
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{folder.name}</p>
@@ -56,16 +80,23 @@ export function FolderListItem({
   folder,
   onOpen,
   onDelete,
+  busy,
+  busyLabel = 'Đang xóa...',
 }: {
   folder: FolderType
   onOpen: () => void
   onDelete: () => void
+  busy?: boolean
+  busyLabel?: string
 }) {
   return (
     <div
-      className="flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card"
-      onClick={onOpen}
+      className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card ${
+        busy ? 'pointer-events-none opacity-90' : ''
+      }`}
+      onClick={busy ? undefined : onOpen}
     >
+      {busy && <FolderBusyOverlay label={busyLabel} />}
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
       <p className="text-sm font-medium truncate flex-1">{folder.name}</p>
       <button

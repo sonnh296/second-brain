@@ -134,9 +134,13 @@ export async function POST(req: NextRequest) {
   let noContext = false
   let conversational = false
   let documentManagement = false
+  const hasTextMessage = message.trim().length > 0
 
   if (mode === 'knowledge') {
-    if (isGreeting(message)) {
+    if (!hasTextMessage && images.length > 0) {
+      // Image-only turns should not spend embedding / retrieval budget on an empty query.
+      conversational = true
+    } else if (isGreeting(message)) {
       conversational = true
     } else if (isDocumentManagementQuery(message)) {
       // Skip RAG — rename/move/tag/note tools need Postgres search, not chunk retrieval.

@@ -262,7 +262,8 @@ export async function runIngestionPipeline(
   r2Key: string,
   fileType: string,
   userId: string,
-  filename: string
+  filename: string,
+  manualContent?: string
 ): Promise<void> {
   // os.tmpdir() respects TMPDIR — on the server this must point to disk,
   // because /tmp is a small RAM-backed tmpfs that large videos would fill.
@@ -311,7 +312,9 @@ export async function runIngestionPipeline(
     let rawText: string
     let pageOffsets: PageOffset[] | null = null
 
-    if (fileType === 'note') {
+    if (manualContent?.trim()) {
+      rawText = manualContent.trim()
+    } else if (fileType === 'note') {
       const { data: doc } = await supabase
         .from('documents')
         .select('note_content')

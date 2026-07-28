@@ -1,18 +1,24 @@
 'use client'
 
-import { useState } from 'react'
-import { Download, ExternalLink, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Download, ExternalLink, Pencil, X } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '@/components/documents/document-grid'
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import { FolderPicker } from '@/components/documents/folder-items'
 import { cn } from '@/lib/utils'
-import { isBrowserInlineType, isImageType, isTranscribableType } from '@/lib/upload/file-types'
+import {
+  isBrowserInlineType,
+  isImageType,
+  isTranscribableType,
+  MAX_DOCUMENT_DESCRIPTION_LENGTH,
+} from '@/lib/upload/file-types'
 import type { Document, Tag } from '@/lib/db/types'
 
-type PanelTab = 'content' | 'subtitles' | 'details'
+type PanelTab = 'content' | 'subtitles' | 'description' | 'details'
 
 interface PreviewData {
   filename: string
@@ -33,7 +39,11 @@ interface DocumentPreviewPanelProps {
   previewLoading: boolean
   editName: string
   editDescription: string
-  savingMeta: boolean
+  editContent: string
+  savingName: boolean
+  savingDescription: boolean
+  savingContent: boolean
+  saveError?: string
   typeLabels: Record<string, string>
   fileIcon: React.ReactNode
   formatBytes: (bytes: number) => string
@@ -46,7 +56,10 @@ interface DocumentPreviewPanelProps {
   onClose: () => void
   onEditName: (v: string) => void
   onEditDescription: (v: string) => void
-  onSaveMetadata: () => void
+  onEditContent: (v: string) => void
+  onSaveName: () => void | Promise<void>
+  onSaveDescription: () => void | Promise<void>
+  onSaveContent: () => void | Promise<void>
   onTagIdsChange: (ids: string[]) => void
   onSaveTags: () => void
   onFolderChange: (folderId: string | null) => void
@@ -55,6 +68,7 @@ interface DocumentPreviewPanelProps {
   reprocessingOcr?: boolean
   onEditNote?: () => void
   onDelete: () => void
+  deleting?: boolean
 }
 
 function PreviewBody({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -69,14 +83,27 @@ function ContentPreview({
   doc,
   preview,
   previewLoading,
+  editContent,
+  savingContent,
+  onEditContent,
+  onSaveContent,
 }: {
   doc: Document
   preview: PreviewData | null
   previewLoading: boolean
+  editContent: string
+  savingContent: boolean
+  onEditContent: (v: string) => void
+  onSaveContent: () => void | Promise<void>
 }) {
   const viewerUrl = preview?.viewer_url ?? preview?.image_url ?? `/api/documents/${doc.id}/download`
   const fileType = preview?.file_type ?? doc.file_type
   const isMedia = isTranscribableType(fileType)
+  const canEditText =
+    doc.file_type !== 'note' &&
+    !isMedia &&
+    (preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
+    Boolean(preview?.content)
 
   if (previewLoading) {
     return (
@@ -119,11 +146,24 @@ function ContentPreview({
             alt={preview?.filename ?? doc.filename}
             className="w-full max-h-[min(50vh,420px)] rounded border object-contain bg-background mx-auto"
           />
-          {preview?.content && (
-            <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-              {preview.content}
-            </pre>
-          )}
+          {preview?.content &&
+            (canEditText ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={editContent}
+                  onChange={(e) => onEditContent(e.target.value)}
+                  rows={10}
+                  className="min-h-56 resize-y text-sm leading-relaxed"
+                />
+                <Button size="sm" variant="outline" onClick={() => void onSaveContent()} disabled={savingContent}>
+                  {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
+                </Button>
+              </div>
+            ) : (
+              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
+                {preview.content}
+              </pre>
+            ))}
           {preview?.message && (
             <p className="text-xs text-muted-foreground">{preview.message}</p>
           )}
@@ -160,9 +200,23 @@ function ContentPreview({
     return (
       <PreviewBody>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-            {preview?.content ?? ''}
-          </pre>
+          {canEditText ? (
+            <div className="space-y-2">
+              <Textarea
+                value={editContent}
+                onChange={(e) => onEditContent(e.target.value)}
+                rows={18}
+                className="min-h-[min(55vh,420px)] resize-y text-sm leading-relaxed"
+              />
+              <Button size="sm" variant="outline" onClick={() => void onSaveContent()} disabled={savingContent}>
+                {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
+              </Button>
+            </div>
+          ) : (
+            <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
+              {preview?.content ?? ''}
+            </pre>
+          )}
         </div>
       </PreviewBody>
     )
@@ -234,13 +288,60 @@ function SubtitlesPanel({
   )
 }
 
+function DescriptionPanel({
+  editDescription,
+  savingDescription,
+  onEditDescription,
+  onSaveDescription,
+}: {
+  editDescription: string
+  savingDescription: boolean
+  onEditDescription: (v: string) => void
+  onSaveDescription: () => void
+}) {
+  return (
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <div>
+          <Label className="text-xs text-muted-foreground">Mô tả tài liệu</Label>
+          <Textarea
+            value={editDescription}
+            onChange={(e) => onEditDescription(e.target.value)}
+            placeholder="Ghi chú, tóm tắt hoặc mô tả chi tiết để dễ tìm lại sau..."
+            rows={14}
+            maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
+            className="mt-1.5 min-h-[min(50vh,320px)] resize-y text-sm leading-relaxed"
+          />
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            {editDescription.length.toLocaleString('vi-VN')} /{' '}
+            {MAX_DOCUMENT_DESCRIPTION_LENGTH.toLocaleString('vi-VN')} ký tự
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={onSaveDescription}
+          disabled={savingDescription}
+        >
+          {savingDescription ? 'Đang lưu...' : 'Lưu mô tả'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function DocumentPreviewPanel({
   doc,
   preview,
   previewLoading,
   editName,
   editDescription,
-  savingMeta,
+  editContent,
+  savingName,
+  savingDescription,
+  savingContent,
+  saveError,
   typeLabels,
   fileIcon,
   formatBytes,
@@ -253,7 +354,10 @@ export function DocumentPreviewPanel({
   onClose,
   onEditName,
   onEditDescription,
-  onSaveMetadata,
+  onEditContent,
+  onSaveName,
+  onSaveDescription,
+  onSaveContent,
   onTagIdsChange,
   onSaveTags,
   onFolderChange,
@@ -262,19 +366,36 @@ export function DocumentPreviewPanel({
   reprocessingOcr,
   onEditNote,
   onDelete,
+  deleting = false,
 }: DocumentPreviewPanelProps) {
   const [tab, setTab] = useState<PanelTab>('content')
+  const [editingName, setEditingName] = useState(false)
   const viewerUrl = `/api/documents/${doc.id}/download`
   const canInline = isBrowserInlineType(doc.file_type)
   const isMedia = isTranscribableType(doc.file_type)
   const canOpenDownload = doc.file_type === 'note' || doc.status === 'done' || isMedia
+
+  useEffect(() => {
+    setEditingName(false)
+    setTab('content')
+  }, [doc.id])
+
+  function cancelNameEdit() {
+    onEditName(doc.filename)
+    setEditingName(false)
+  }
+
+  async function commitNameEdit() {
+    await onSaveName()
+    setEditingName(false)
+  }
 
   const tabBtn = (id: PanelTab, label: string) => (
     <button
       type="button"
       onClick={() => setTab(id)}
       className={cn(
-        'flex-1 px-3 py-2 text-sm transition-colors cursor-pointer',
+        'flex-1 px-2.5 py-2 text-sm transition-colors cursor-pointer whitespace-nowrap',
         tab === id
           ? 'border-b-2 border-primary font-medium text-foreground'
           : 'text-muted-foreground hover:text-foreground'
@@ -286,22 +407,87 @@ export function DocumentPreviewPanel({
 
   return (
     <div className="w-full sm:w-[min(100vw-2rem,28rem)] lg:w-lg shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
-      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b gap-2">
-        <p className="text-sm font-medium truncate flex-1">{doc.filename}</p>
+      <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b">
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          {editingName ? (
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <Input
+                value={editName}
+                onChange={(e) => onEditName(e.target.value)}
+                className="h-8 text-sm flex-1 min-w-0"
+                autoFocus
+                disabled={savingName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void commitNameEdit()
+                  if (e.key === 'Escape') cancelNameEdit()
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 shrink-0 px-2.5"
+                onClick={() => void commitNameEdit()}
+                disabled={savingName || !editName.trim()}
+              >
+                {savingName ? '...' : 'Lưu'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 px-2"
+                onClick={cancelNameEdit}
+                disabled={savingName}
+              >
+                Hủy
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium truncate flex-1 min-w-0">{doc.filename}</p>
+              <button
+                type="button"
+                className="shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                title="Sửa tên"
+                aria-label="Sửa tên"
+                onClick={() => {
+                  onEditName(doc.filename)
+                  setEditingName(true)
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+        </div>
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
 
-      <div className="shrink-0 flex border-b">
+      <div className="shrink-0 flex border-b overflow-x-auto">
         {tabBtn('content', 'Nội dung')}
         {isMedia && tabBtn('subtitles', 'Phụ đề')}
+        {tabBtn('description', 'Mô tả')}
         {tabBtn('details', 'Chi tiết')}
       </div>
+      {saveError && (
+        <div className="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          {saveError}
+        </div>
+      )}
 
       {tab === 'content' ? (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <ContentPreview doc={doc} preview={preview} previewLoading={previewLoading} />
+          <ContentPreview
+            doc={doc}
+            preview={preview}
+            previewLoading={previewLoading}
+            editContent={editContent}
+            savingContent={savingContent}
+            onEditContent={onEditContent}
+            onSaveContent={onSaveContent}
+          />
           {doc.file_type !== 'note' && canOpenDownload && (
             <div className="shrink-0 flex gap-2 p-3 border-t bg-muted/50 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
               {canInline && (
@@ -336,36 +522,17 @@ export function DocumentPreviewPanel({
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <SubtitlesPanel preview={preview} previewLoading={previewLoading} status={doc.status} />
         </div>
+      ) : tab === 'description' ? (
+        <DescriptionPanel
+          editDescription={editDescription}
+          savingDescription={savingDescription}
+          onEditDescription={onEditDescription}
+          onSaveDescription={onSaveDescription}
+        />
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-4 space-y-3">
             <div className="flex justify-center py-2">{fileIcon}</div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Tên</Label>
-              <Input
-                value={editName}
-                onChange={(e) => onEditName(e.target.value)}
-                className="mt-1 text-sm"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Mô tả</Label>
-              <Input
-                value={editDescription}
-                onChange={(e) => onEditDescription(e.target.value)}
-                placeholder="Mô tả ngắn..."
-                className="mt-1 text-sm"
-              />
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={onSaveMetadata}
-              disabled={savingMeta}
-            >
-              {savingMeta ? 'Đang lưu...' : 'Lưu tên & mô tả'}
-            </Button>
 
             <DocumentTagEditor
               allTags={allTags}
@@ -424,8 +591,8 @@ export function DocumentPreviewPanel({
                   Sửa nội dung
                 </Button>
               )}
-              <Button variant="destructive" size="sm" onClick={onDelete}>
-                Xóa
+              <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>
+                {deleting ? 'Đang xóa...' : 'Xóa'}
               </Button>
             </div>
           </div>

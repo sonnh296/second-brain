@@ -15,6 +15,9 @@ export const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
 /** Video/audio types eligible for Whisper transcription before indexing. */
 export const TRANSCRIBABLE_TYPES = new Set(['mp3', 'wav', 'mp4', 'mov'])
 
+/** Max length for document description (upload + edit). */
+export const MAX_DOCUMENT_DESCRIPTION_LENGTH = 5000
+
 export const BLOCKED_EXTENSIONS = new Set([
   'exe',
   'bat',

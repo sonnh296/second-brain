@@ -35,6 +35,10 @@ export async function generateSessionTitle(
   const fallback = titleFromFirstMessage(message, 40)
   const question = message.replace(/\s+/g, ' ').trim().slice(0, 500)
   if (!question) return 'Cuộc trò chuyện mới'
+  const wordCount = question.split(/\s+/).filter(Boolean).length
+  if (fallback.length <= 40 && wordCount <= 6) {
+    return fallback
+  }
 
   try {
     const { text, usage } = await generateText({

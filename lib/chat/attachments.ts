@@ -28,7 +28,8 @@ export type StoredAttachment = {
 }
 
 /** Cap images re-sent from history to the model. */
-export const HISTORY_IMAGE_CAP = 8
+export const HISTORY_IMAGE_CAP = Number(process.env.HISTORY_IMAGE_CAP ?? 4)
+export const HISTORY_IMAGE_MESSAGE_CAP = Number(process.env.HISTORY_IMAGE_MESSAGE_CAP ?? 2)
 
 type ImagePart = { type: 'image'; image: string; mimeType: string }
 type TextPart = { type: 'text'; text: string }
@@ -93,13 +94,18 @@ export async function persistChatImages(
  */
 export async function buildMultimodalHistory(
   rows: HistoryRow[],
-  imageCap = HISTORY_IMAGE_CAP
+  imageCap = HISTORY_IMAGE_CAP,
+  messageCap = HISTORY_IMAGE_MESSAGE_CAP
 ): Promise<{ role: 'user' | 'assistant'; content: MultimodalContent }[]> {
-  // Decide which attachment IDs to include (prefer newest messages)
+  // Only rehydrate recent image turns; older image context is expensive and rarely needed.
   const selectedIds = new Set<string>()
   let remaining = imageCap
+  let remainingMessages = messageCap
   for (let i = rows.length - 1; i >= 0 && remaining > 0; i--) {
     const atts = rows[i].attachments ?? []
+    if (atts.length === 0) continue
+    if (remainingMessages <= 0) break
+    remainingMessages--
     for (let j = atts.length - 1; j >= 0 && remaining > 0; j--) {
       selectedIds.add(atts[j].id)
       remaining--

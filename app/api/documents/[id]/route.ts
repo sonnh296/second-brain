@@ -9,8 +9,9 @@ import { logger } from '@/lib/logger'
 
 const UpdateDocumentSchema = z.object({
   filename: z.string().min(1).max(200).optional(),
-  description: z.string().max(500).optional().nullable(),
+  description: z.string().max(5000).optional().nullable(),
   note_content: z.string().min(1).max(50000).optional(),
+  content: z.string().max(200000).optional(),
   tag_ids: z.array(z.string().uuid()).max(20).optional(),
   folder_id: z.string().uuid().nullable().optional(),
 })
@@ -65,6 +66,7 @@ export async function PATCH(
   }
 
   let shouldReingest = false
+  let manualContent: string | null = null
   if (parsed.data.note_content !== undefined) {
     if (doc.file_type !== 'note') {
       return NextResponse.json({ error: 'Only notes can be edited' }, { status: 400 })
@@ -77,8 +79,21 @@ export async function PATCH(
     shouldReingest = true
   }
 
+  if (parsed.data.content !== undefined) {
+    if (doc.file_type === 'note') {
+      return NextResponse.json({ error: 'Use note editor for notes' }, { status: 400 })
+    }
+    const normalized = parsed.data.content.trim()
+    if (!normalized) {
+      return NextResponse.json({ error: 'Nội dung không được để trống' }, { status: 400 })
+    }
+    manualContent = normalized
+  }
+
   if (Object.keys(updates).length === 0 && parsed.data.tag_ids === undefined) {
-    return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+    if (manualContent === null) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+    }
   }
 
   let updated = doc as Record<string, unknown>
@@ -113,6 +128,52 @@ export async function PATCH(
       await updateDocumentFilename(user.id, documentId, parsed.data.filename)
     } catch (err) {
       logger.error('Qdrant filename update failed', { err, documentId, userId: user.id })
+    }
+  }
+
+  if (manualContent !== null) {
+    const contentUpdates = {
+      extracted_content: manualContent,
+      status: 'pending',
+      chunk_count: null,
+      error_message: null,
+    }
+    const { data: refreshed, error: contentError } = await supabase
+      .from('documents')
+      .update(contentUpdates)
+      .eq('id', documentId)
+      .eq('user_id', user.id)
+      .select(
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+      )
+      .single()
+    if (contentError || !refreshed) {
+      return NextResponse.json({ error: 'Không thể lưu nội dung đã chỉnh sửa' }, { status: 500 })
+    }
+    updated = refreshed
+    try {
+      await enqueueIngestionJob(
+        {
+          document_id: documentId,
+          r2_key: doc.r2_key,
+          file_type: doc.file_type,
+          user_id: user.id,
+          manual_content: manualContent,
+        },
+        { force: true }
+      )
+    } catch (err) {
+      await supabase
+        .from('documents')
+        .update({ status: 'failed', error_message: 'Không thể xếp hàng cập nhật nội dung' })
+        .eq('id', documentId)
+        .eq('user_id', user.id)
+      logger.error('Manual document reindex enqueue failed', {
+        err,
+        documentId,
+        userId: user.id,
+      })
+      return NextResponse.json({ error: 'Không thể xếp hàng cập nhật nội dung' }, { status: 500 })
     }
   }
 

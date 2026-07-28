@@ -1,6 +1,6 @@
-'use client'
+"use client";
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   FileText,
   FileType,
@@ -21,193 +21,262 @@ import {
   ChevronLeft,
   Trash2,
   RotateCcw,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { DriveGridItem, DriveListItem } from '@/components/documents/document-grid'
-import { DocumentPreviewPanel } from '@/components/documents/document-preview-panel'
-import { NoteModal } from '@/components/documents/note-modal'
-import { FileDropzone } from '@/components/documents/file-dropzone'
-import { TagManager } from '@/components/documents/tag-manager'
-import { useConfirm } from '@/components/ui/confirm-dialog'
-import { Textarea } from '@/components/ui/textarea'
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  DriveGridItem,
+  DriveListItem,
+} from "@/components/documents/document-grid";
+import { DocumentPreviewPanel } from "@/components/documents/document-preview-panel";
+import { NoteModal } from "@/components/documents/note-modal";
+import { FileDropzone } from "@/components/documents/file-dropzone";
+import { TagManager } from "@/components/documents/tag-manager";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   FolderGridItem,
   FolderListItem,
   FolderBreadcrumb,
-} from '@/components/documents/folder-items'
-import { useDocumentPolling } from '@/hooks/use-document-polling'
-import { TYPE_LABELS, isImageType } from '@/lib/upload/file-types'
-import type { Document, Tag as TagType, Folder } from '@/lib/db/types'
+} from "@/components/documents/folder-items";
+import { useDocumentPolling } from "@/hooks/use-document-polling";
+import {
+  TYPE_LABELS,
+  isImageType,
+  MAX_DOCUMENT_DESCRIPTION_LENGTH,
+} from "@/lib/upload/file-types";
+import type { Document, Tag as TagType, Folder } from "@/lib/db/types";
 
-type DocStatus = 'pending' | 'processing' | 'done' | 'failed'
-type TypeFilter = 'all' | 'note' | 'pdf' | 'docx' | 'txt'
-type StatusFilter = 'all' | DocStatus
-type SortBy = 'date' | 'name'
-type ViewMode = 'grid' | 'list'
+type DocStatus = "pending" | "processing" | "done" | "failed";
+type TypeFilter = "all" | "note" | "pdf" | "docx" | "txt";
+type StatusFilter = "all" | DocStatus;
+type SortBy = "date" | "name";
+type ViewMode = "grid" | "list";
 
 interface PreviewData {
-  filename: string
-  file_type: string
-  status: string
-  content: string | null
-  preview_type: string
-  message?: string
-  image_url?: string
-  viewer_url?: string
-  can_inline?: boolean
-  download_url?: string
+  filename: string;
+  file_type: string;
+  status: string;
+  content: string | null;
+  preview_type: string;
+  message?: string;
+  image_url?: string;
+  viewer_url?: string;
+  can_inline?: boolean;
+  download_url?: string;
 }
 
 interface NoteModalState {
-  mode: 'create' | 'edit'
-  doc?: Document
+  mode: "create" | "edit";
+  doc?: Document;
 }
 
-const TYPE_LABELS_LOCAL = TYPE_LABELS
+const TYPE_LABELS_LOCAL = TYPE_LABELS;
 
 const STATUS_LABELS: Record<DocStatus, string> = {
-  done: 'Sẵn sàng',
-  pending: 'Chờ xử lý',
-  processing: 'Đang xử lý',
-  failed: 'Lỗi',
-}
+  done: "Sẵn sàng",
+  pending: "Chờ xử lý",
+  processing: "Đang xử lý",
+  failed: "Lỗi",
+};
 
-const SIDEBAR_TYPES: { id: TypeFilter; label: string; icon: React.ReactNode }[] = [
-  { id: 'all', label: 'Tất cả', icon: <File className="h-4 w-4" /> },
-  { id: 'note', label: 'Ghi chú', icon: <StickyNote className="h-4 w-4" /> },
-  { id: 'pdf', label: 'PDF', icon: <FileText className="h-4 w-4 text-red-500" /> },
-  { id: 'docx', label: 'Word', icon: <FileType className="h-4 w-4 text-blue-500" /> },
-  { id: 'txt', label: 'Văn bản', icon: <FileText className="h-4 w-4 text-muted-foreground" /> },
-]
+const SIDEBAR_TYPES: {
+  id: TypeFilter;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
+  { id: "all", label: "Tất cả", icon: <File className="h-4 w-4" /> },
+  {
+    id: "note",
+    label: "Ghi chú",
+    icon: <FileText className="h-4 w-4 text-fuchsia-500" />,
+  },
+  {
+    id: "pdf",
+    label: "PDF",
+    icon: <FileText className="h-4 w-4 text-red-500" />,
+  },
+  {
+    id: "docx",
+    label: "Word",
+    icon: <FileType className="h-4 w-4 text-blue-500" />,
+  },
+  {
+    id: "txt",
+    label: "Văn bản",
+    icon: <FileText className="h-4 w-4 text-muted-foreground" />,
+  },
+];
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function FileIcon({ type, size = 'md' }: { type: string; size?: 'sm' | 'md' }) {
-  const cls = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10'
+function FileIcon({ type, size = "md" }: { type: string; size?: "sm" | "md" }) {
+  const cls = size === "sm" ? "h-8 w-8" : "h-10 w-10";
   switch (type) {
-    case 'note':
-      return <StickyNote className={`${cls} text-amber-500`} />
-    case 'pdf':
-      return <FileText className={`${cls} text-red-500`} />
-    case 'docx':
-      return <FileType className={`${cls} text-blue-500`} />
-    case 'txt':
-    case 'md':
-    case 'csv':
-    case 'json':
-    case 'html':
-      return <FileText className={`${cls} text-slate-500`} />
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'webp':
-    case 'svg':
-      return <ImageIcon className={`${cls} text-emerald-500`} />
-    case 'mp3':
-    case 'wav':
-      return <Music className={`${cls} text-violet-500`} />
-    case 'mp4':
-    case 'mov':
-      return <Film className={`${cls} text-pink-500`} />
-    case 'zip':
-    case 'xlsx':
-    case 'xls':
-    case 'pptx':
-    case 'ppt':
-      return <Archive className={`${cls} text-orange-500`} />
+    case "note":
+      return <FileText className={`${cls} text-fuchsia-500`} />;
+    case "pdf":
+      return <FileText className={`${cls} text-red-500`} />;
+    case "docx":
+      return <FileType className={`${cls} text-blue-500`} />;
+    case "txt":
+    case "md":
+    case "csv":
+    case "json":
+    case "html":
+      return <FileText className={`${cls} text-slate-500`} />;
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "webp":
+    case "svg":
+      return <ImageIcon className={`${cls} text-emerald-500`} />;
+    case "mp3":
+    case "wav":
+      return <Music className={`${cls} text-violet-500`} />;
+    case "mp4":
+    case "mov":
+      return <Film className={`${cls} text-pink-500`} />;
+    case "zip":
+    case "xlsx":
+    case "xls":
+    case "pptx":
+    case "ppt":
+      return <Archive className={`${cls} text-orange-500`} />;
     default:
-      return <File className={`${cls} text-muted-foreground`} />
+      return <File className={`${cls} text-muted-foreground`} />;
   }
 }
 
 export default function DocumentsPage() {
-  const { confirm, dialog: confirmDialog } = useConfirm()
-  const [documents, setDocuments] = useState<Document[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
-  const [uploadError, setUploadError] = useState('')
-  const [showUploadPanel, setShowUploadPanel] = useState(false)
-  const [uploadDescription, setUploadDescription] = useState('')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [tags, setTags] = useState<TagType[]>([])
-  const [tagFilter, setTagFilter] = useState<string | 'all'>('all')
-  const [showTagManager, setShowTagManager] = useState(false)
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
-  const [savingTags, setSavingTags] = useState(false)
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
-  const [folders, setFolders] = useState<Folder[]>([])
-  const [allFolders, setAllFolders] = useState<Folder[]>([])
-  const [breadcrumb, setBreadcrumb] = useState<{ id: string | null; name: string }[]>([
-    { id: null, name: 'Gốc' },
-  ])
-  const [newFolderName, setNewFolderName] = useState('')
-  const [creatingFolder, setCreatingFolder] = useState(false)
-  const [showNewFolder, setShowNewFolder] = useState(false)
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
-  const [savingFolder, setSavingFolder] = useState(false)
-  const [reprocessingOcr, setReprocessingOcr] = useState(false)
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
-  const [preview, setPreview] = useState<PreviewData | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
-  const [noteModal, setNoteModal] = useState<NoteModalState | null>(null)
-  const [noteTitle, setNoteTitle] = useState('')
-  const [noteContent, setNoteContent] = useState('')
-  const [savingNote, setSavingNote] = useState(false)
-  const [noteError, setNoteError] = useState('')
-  const [editName, setEditName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [savingMeta, setSavingMeta] = useState(false)
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState<SortBy>('date')
-  const [viewMode, setViewMode] = useState<ViewMode>('grid')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [trashMode, setTrashMode] = useState(false)
-  const [trashDocs, setTrashDocs] = useState<Document[]>([])
-  const [trashLoading, setTrashLoading] = useState(false)
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [uploadDescription, setUploadDescription] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [tags, setTags] = useState<TagType[]>([]);
+  const [tagFilter, setTagFilter] = useState<string | "all">("all");
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [savingTags, setSavingTags] = useState(false);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [allFolders, setAllFolders] = useState<Folder[]>([]);
+  const [breadcrumb, setBreadcrumb] = useState<
+    { id: string | null; name: string }[]
+  >([{ id: null, name: "Gốc" }]);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [savingFolder, setSavingFolder] = useState(false);
+  const [reprocessingOcr, setReprocessingOcr] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [noteModal, setNoteModal] = useState<NoteModalState | null>(null);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteError, setNoteError] = useState("");
+  const [panelSaveError, setPanelSaveError] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editContent, setEditContent] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [savingDescription, setSavingDescription] = useState(false);
+  const [savingContent, setSavingContent] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortBy>("date");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [trashMode, setTrashMode] = useState(false);
+  const [trashDocs, setTrashDocs] = useState<Document[]>([]);
+  const [trashLoading, setTrashLoading] = useState(false);
+  const [deletingDocIds, setDeletingDocIds] = useState<string[]>([]);
+  const [deletingFolderIds, setDeletingFolderIds] = useState<string[]>([]);
+  const [trashAction, setTrashAction] = useState<{
+    id: string;
+    type: "purge" | "restore";
+  } | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    function onPointerDown(e: PointerEvent) {
+      if (
+        addMenuRef.current &&
+        !addMenuRef.current.contains(e.target as Node)
+      ) {
+        setAddMenuOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [addMenuOpen]);
+
+  function markDeletingDoc(id: string) {
+    setDeletingDocIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
+  function unmarkDeletingDoc(id: string) {
+    setDeletingDocIds((prev) => prev.filter((x) => x !== id));
+  }
+
+  function markDeletingFolder(id: string) {
+    setDeletingFolderIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
+  function unmarkDeletingFolder(id: string) {
+    setDeletingFolderIds((prev) => prev.filter((x) => x !== id));
+  }
 
   const fetchTags = useCallback(async () => {
-    const res = await fetch('/api/tags')
-    if (res.ok) setTags(await res.json())
-  }, [])
+    const res = await fetch("/api/tags");
+    if (res.ok) setTags(await res.json());
+  }, []);
 
   const fetchAllFolders = useCallback(async () => {
-    const res = await fetch('/api/folders?all=1')
-    if (res.ok) setAllFolders(await res.json())
-  }, [])
+    const res = await fetch("/api/folders?all=1");
+    if (res.ok) setAllFolders(await res.json());
+  }, []);
 
   const fetchFolders = useCallback(async (parentId: string | null) => {
-    const q = parentId ? `?parent_id=${parentId}` : '?parent_id=root'
-    const res = await fetch(`/api/folders${q}`)
-    if (res.ok) setFolders(await res.json())
-  }, [])
+    const q = parentId ? `?parent_id=${parentId}` : "?parent_id=root";
+    const res = await fetch(`/api/folders${q}`);
+    if (res.ok) setFolders(await res.json());
+  }, []);
 
   const loadBreadcrumb = useCallback(async (folderId: string | null) => {
     if (!folderId) {
-      setBreadcrumb([{ id: null, name: 'Gốc' }])
-      return
+      setBreadcrumb([{ id: null, name: "Gốc" }]);
+      return;
     }
-    const res = await fetch(`/api/folders/${folderId}`)
+    const res = await fetch(`/api/folders/${folderId}`);
     if (res.ok) {
-      const data = await res.json()
-      setBreadcrumb([{ id: null, name: 'Gốc' }, ...data.breadcrumb])
+      const data = await res.json();
+      setBreadcrumb([{ id: null, name: "Gốc" }, ...data.breadcrumb]);
     }
-  }, [])
+  }, []);
 
   const fetchDocuments = useCallback(async (folderId: string | null) => {
-    const q = folderId ? `?folder_id=${folderId}` : '?folder_id=root'
-    const res = await fetch(`/api/documents${q}`)
-    if (res.ok) setDocuments(await res.json())
-  }, [])
+    const q = folderId ? `?folder_id=${folderId}` : "?folder_id=root";
+    const res = await fetch(`/api/documents${q}`);
+    if (res.ok) setDocuments(await res.json());
+  }, []);
 
   const refreshFolderView = useCallback(
     async (folderId: string | null) => {
@@ -216,187 +285,209 @@ export default function DocumentsPage() {
         fetchDocuments(folderId),
         loadBreadcrumb(folderId),
         fetchAllFolders(),
-      ])
+      ]);
     },
-    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders]
-  )
+    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders],
+  );
 
   useEffect(() => {
     Promise.all([refreshFolderView(currentFolderId), fetchTags()]).finally(() =>
-      setLoading(false)
-    )
-  }, [currentFolderId, refreshFolderView, fetchTags])
+      setLoading(false),
+    );
+  }, [currentFolderId, refreshFolderView, fetchTags]);
 
-  useDocumentPolling(documents, setDocuments)
+  useDocumentPolling(documents, setDocuments);
 
   // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
   useEffect(() => {
-    if (!selectedDoc) return
-    const latest = documents.find((d) => d.id === selectedDoc.id)
-    if (!latest) return
+    if (!selectedDoc) return;
+    const latest = documents.find((d) => d.id === selectedDoc.id);
+    if (!latest) return;
 
     if (
       latest.status !== selectedDoc.status ||
       latest.chunk_count !== selectedDoc.chunk_count ||
       latest.error_message !== selectedDoc.error_message
     ) {
-      setSelectedDoc(latest)
-      if (latest.status === 'done' || latest.status === 'failed') {
+      setSelectedDoc(latest);
+      if (latest.status === "done" || latest.status === "failed") {
         fetch(`/api/documents/${latest.id}/preview`).then(async (res) => {
-          if (res.ok) setPreview(await res.json())
-        })
+          if (res.ok) setPreview(await res.json());
+        });
       }
     }
-  }, [documents, selectedDoc])
+  }, [documents, selectedDoc]);
 
   function navigateToFolder(folderId: string | null) {
-    setCurrentFolderId(folderId)
-    closePreview()
-    setLoading(true)
+    setCurrentFolderId(folderId);
+    closePreview();
+    setLoading(true);
   }
 
   async function createFolder() {
-    if (!newFolderName.trim()) return
-    setCreatingFolder(true)
-    const res = await fetch('/api/folders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newFolderName.trim(), parent_id: currentFolderId }),
-    })
-    setCreatingFolder(false)
+    if (!newFolderName.trim()) return;
+    setCreatingFolder(true);
+    const res = await fetch("/api/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: newFolderName.trim(),
+        parent_id: currentFolderId,
+      }),
+    });
+    setCreatingFolder(false);
     if (res.ok) {
-      setNewFolderName('')
-      setShowNewFolder(false)
-      await refreshFolderView(currentFolderId)
+      setNewFolderName("");
+      setShowNewFolder(false);
+      await refreshFolderView(currentFolderId);
     }
   }
 
   async function deleteFolder(folderId: string) {
     const ok = await confirm({
-      title: 'Xóa thư mục?',
-      description: 'Tài liệu bên trong sẽ chuyển về thư mục gốc.',
-      confirmLabel: 'Xóa thư mục',
-    })
-    if (!ok) return
-    await fetch(`/api/folders/${folderId}`, { method: 'DELETE' })
-    if (currentFolderId === folderId) navigateToFolder(null)
-    else await refreshFolderView(currentFolderId)
+      title: "Xóa thư mục?",
+      description: "Tài liệu bên trong sẽ chuyển về thư mục gốc.",
+      confirmLabel: "Xóa thư mục",
+    });
+    if (!ok) return;
+    markDeletingFolder(folderId);
+    try {
+      await fetch(`/api/folders/${folderId}`, { method: "DELETE" });
+      if (currentFolderId === folderId) navigateToFolder(null);
+      else await refreshFolderView(currentFolderId);
+    } finally {
+      unmarkDeletingFolder(folderId);
+    }
   }
 
   useEffect(() => {
     if (selectedDoc) {
-      setEditName(selectedDoc.filename)
-      setEditDescription(selectedDoc.description ?? '')
-      setSelectedTagIds(selectedDoc.tags?.map((t) => t.id) ?? [])
-      setSelectedFolderId(selectedDoc.folder_id ?? null)
+      setPanelSaveError("");
+      setEditName(selectedDoc.filename);
+      setEditDescription(selectedDoc.description ?? "");
+      setSelectedTagIds(selectedDoc.tags?.map((t) => t.id) ?? []);
+      setSelectedFolderId(selectedDoc.folder_id ?? null);
     }
-  }, [selectedDoc])
+  }, [selectedDoc]);
+
+  useEffect(() => {
+    setEditContent(preview?.content ?? "");
+  }, [preview?.content, selectedDoc?.id]);
 
   const filteredDocs = useMemo(() => {
-    let result = [...documents]
-    if (typeFilter !== 'all') {
-      result = result.filter((d) => d.file_type === typeFilter)
+    let result = [...documents];
+    if (typeFilter !== "all") {
+      result = result.filter((d) => d.file_type === typeFilter);
     }
-    if (statusFilter !== 'all') {
-      result = result.filter((d) => d.status === statusFilter)
+    if (statusFilter !== "all") {
+      result = result.filter((d) => d.status === statusFilter);
     }
-    if (tagFilter !== 'all') {
-      result = result.filter((d) => d.tags?.some((t) => t.id === tagFilter))
+    if (tagFilter !== "all") {
+      result = result.filter((d) => d.tags?.some((t) => t.id === tagFilter));
     }
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
+      const q = searchQuery.toLowerCase();
       result = result.filter(
         (d) =>
           d.filename.toLowerCase().includes(q) ||
           (d.description?.toLowerCase().includes(q) ?? false) ||
-          (d.tags?.some((t) => t.name.toLowerCase().includes(q)) ?? false)
-      )
+          (d.tags?.some((t) => t.name.toLowerCase().includes(q)) ?? false),
+      );
     }
     result.sort((a, b) => {
-      if (sortBy === 'name') return a.filename.localeCompare(b.filename, 'vi')
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    })
-    return result
-  }, [documents, typeFilter, statusFilter, tagFilter, searchQuery, sortBy])
+      if (sortBy === "name") return a.filename.localeCompare(b.filename, "vi");
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+    return result;
+  }, [documents, typeFilter, statusFilter, tagFilter, searchQuery, sortBy]);
 
   const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: documents.length }
+    const counts: Record<string, number> = { all: documents.length };
     for (const d of documents) {
-      counts[d.file_type] = (counts[d.file_type] ?? 0) + 1
+      counts[d.file_type] = (counts[d.file_type] ?? 0) + 1;
     }
-    return counts
-  }, [documents])
+    return counts;
+  }, [documents]);
 
   function putToR2WithProgress(
     url: string,
     file: File,
     contentType: string,
-    onProgress: (percent: number) => void
+    onProgress: (percent: number) => void,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('PUT', url)
-      xhr.setRequestHeader('Content-Type', contentType)
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Type", contentType);
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
-      }
+        if (e.lengthComputable)
+          onProgress(Math.round((e.loaded / e.total) * 100));
+      };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve()
-        else reject(new Error(`Tải lên kho lưu trữ thất bại (HTTP ${xhr.status})`))
-      }
-      xhr.onerror = () => reject(new Error('Mất kết nối khi tải lên kho lưu trữ'))
-      xhr.send(file)
-    })
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else
+          reject(
+            new Error(`Tải lên kho lưu trữ thất bại (HTTP ${xhr.status})`),
+          );
+      };
+      xhr.onerror = () =>
+        reject(new Error("Mất kết nối khi tải lên kho lưu trữ"));
+      xhr.send(file);
+    });
   }
 
   async function waitForDocumentProcessing(
     documentId: string,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): Promise<void> {
-    const maxWaitMs = 10 * 60 * 1000
-    const start = Date.now()
+    const maxWaitMs = 10 * 60 * 1000;
+    const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      const res = await fetch(`/api/documents/status?ids=${documentId}`)
-      if (!res.ok) break
+      const res = await fetch(`/api/documents/status?ids=${documentId}`);
+      if (!res.ok) break;
       const updates = (await res.json()) as Record<
         string,
         { status: string; error_message: string | null }
-      >
-      const update = updates[documentId]
-      if (!update) break
-      if (update.status === 'done') return
-      if (update.status === 'failed') {
-        throw new Error(update.error_message ?? 'Tạo phụ đề thất bại')
+      >;
+      const update = updates[documentId];
+      if (!update) break;
+      if (update.status === "done") return;
+      if (update.status === "failed") {
+        throw new Error(update.error_message ?? "Tạo phụ đề thất bại");
       }
       onProgress?.(
-        update.status === 'processing' ? 'Đang tạo phụ đề...' : 'Đang chờ xử lý...'
-      )
-      await new Promise((r) => setTimeout(r, 2000))
+        update.status === "processing"
+          ? "Đang tạo phụ đề..."
+          : "Đang chờ xử lý...",
+      );
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if (!selectedFile) return
-    setUploading(true)
-    setUploadError('')
-    setUploadProgress(0)
+    e.preventDefault();
+    if (!selectedFile) return;
+    setUploading(true);
+    setUploadError("");
+    setUploadProgress(0);
 
     try {
       // 1. Presign: create the record + get a direct-to-R2 upload URL
-      const presignRes = await fetch('/api/upload/presign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const presignRes = await fetch("/api/upload/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filename: selectedFile.name,
           size: selectedFile.size,
           description: uploadDescription.trim() || undefined,
           folder_id: currentFolderId ?? undefined,
         }),
-      })
-      const presign = await presignRes.json()
+      });
+      const presign = await presignRes.json();
       if (!presignRes.ok) {
-        throw new Error(presign.error ?? 'Upload failed')
+        throw new Error(presign.error ?? "Upload failed");
       }
 
       // 2. Upload straight to R2 — the file never passes through our server
@@ -404,229 +495,312 @@ export default function DocumentsPage() {
         presign.upload_url,
         selectedFile,
         presign.content_type,
-        setUploadProgress
-      )
+        setUploadProgress,
+      );
 
       // 3. Complete: server verifies the object and queues processing (transcribe once)
-      let completeRes = await fetch('/api/upload/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      let completeRes = await fetch("/api/upload/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ document_id: presign.document_id }),
-      })
+      });
       if (!completeRes.ok) {
         // One retry — R2 head can briefly lag after a large PUT
-        await new Promise((r) => setTimeout(r, 1500))
-        completeRes = await fetch('/api/upload/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        await new Promise((r) => setTimeout(r, 1500));
+        completeRes = await fetch("/api/upload/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ document_id: presign.document_id }),
-        })
+        });
       }
-      const complete = await completeRes.json()
+      const complete = await completeRes.json();
       if (!completeRes.ok) {
-        throw new Error(complete.error ?? 'Upload failed')
+        throw new Error(complete.error ?? "Upload failed");
       }
 
       // Wait until worker finishes (transcribe once → save to DB)
-      const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name)
+      const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name);
       if (isMedia) {
-        await waitForDocumentProcessing(presign.document_id)
+        await waitForDocumentProcessing(presign.document_id);
       }
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed')
-      setUploading(false)
-      return
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setUploading(false);
+      return;
     }
 
-    setUploading(false)
-    setUploadProgress(null)
-    setUploadDescription('')
-    setSelectedFile(null)
-    setShowUploadPanel(false)
-    await refreshFolderView(currentFolderId)
+    setUploading(false);
+    setUploadProgress(null);
+    setUploadDescription("");
+    setSelectedFile(null);
+    setShowUploadPanel(false);
+    await refreshFolderView(currentFolderId);
   }
 
   function openCreateNoteModal() {
-    setNoteModal({ mode: 'create' })
-    setNoteTitle('')
-    setNoteContent('')
-    setNoteError('')
+    setNoteModal({ mode: "create" });
+    setNoteTitle("");
+    setNoteContent("");
+    setNoteError("");
   }
 
   function openEditNoteModal(doc: Document) {
-    setNoteModal({ mode: 'edit', doc })
-    setNoteTitle(doc.filename)
-    setNoteContent('')
-    setNoteError('')
+    setNoteModal({ mode: "edit", doc });
+    setNoteTitle(doc.filename);
+    setNoteContent("");
+    setNoteError("");
     fetch(`/api/documents/${doc.id}/preview`).then(async (res) => {
-      if (res.ok) setNoteContent((await res.json()).content ?? '')
-    })
+      if (res.ok) setNoteContent((await res.json()).content ?? "");
+    });
   }
 
   function closeNoteModal() {
-    setNoteModal(null)
-    setNoteTitle('')
-    setNoteContent('')
-    setNoteError('')
+    setNoteModal(null);
+    setNoteTitle("");
+    setNoteContent("");
+    setNoteError("");
   }
 
   async function saveNote() {
-    if (!noteTitle.trim() || !noteContent.trim()) return
-    setSavingNote(true)
-    setNoteError('')
-    if (noteModal?.mode === 'create') {
-      const res = await fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+    if (!noteTitle.trim() || !noteContent.trim()) return;
+    setSavingNote(true);
+    setNoteError("");
+    if (noteModal?.mode === "create") {
+      const res = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: noteTitle.trim(),
           content: noteContent.trim(),
           folder_id: currentFolderId,
         }),
-      })
-      const data = await res.json()
+      });
+      const data = await res.json();
       if (!res.ok) {
-        setNoteError(data.error ?? 'Lưu thất bại')
-        setSavingNote(false)
-        return
+        setNoteError(data.error ?? "Lưu thất bại");
+        setSavingNote(false);
+        return;
       }
     } else if (noteModal?.doc) {
       const res = await fetch(`/api/documents/${noteModal.doc.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: noteTitle.trim(), note_content: noteContent.trim() }),
-      })
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: noteTitle.trim(),
+          note_content: noteContent.trim(),
+        }),
+      });
       if (!res.ok) {
-        setNoteError((await res.json()).error ?? 'Cập nhật thất bại')
-        setSavingNote(false)
-        return
+        setNoteError((await res.json()).error ?? "Cập nhật thất bại");
+        setSavingNote(false);
+        return;
       }
     }
-    setSavingNote(false)
-    closeNoteModal()
-    await refreshFolderView(currentFolderId)
+    setSavingNote(false);
+    closeNoteModal();
+    await refreshFolderView(currentFolderId);
   }
 
   async function openDocument(doc: Document) {
-    setSelectedDoc(doc)
-    setPreviewLoading(true)
-    setPreview(null)
-    const res = await fetch(`/api/documents/${doc.id}/preview`)
-    if (res.ok) setPreview(await res.json())
-    setPreviewLoading(false)
+    setSelectedDoc(doc);
+    setPreviewLoading(true);
+    setPreview(null);
+    const res = await fetch(`/api/documents/${doc.id}/preview`);
+    if (res.ok) setPreview(await res.json());
+    setPreviewLoading(false);
   }
 
   function closePreview() {
-    setSelectedDoc(null)
-    setPreview(null)
+    setSelectedDoc(null);
+    setPreview(null);
   }
 
-  async function saveMetadata() {
-    if (!selectedDoc) return
-    setSavingMeta(true)
+  async function saveName() {
+    if (!selectedDoc) return;
+    setPanelSaveError("");
+    setSavingName(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         filename: editName.trim() || selectedDoc.filename,
+      }),
+    });
+    if (res.ok) {
+      setSelectedDoc(await res.json());
+      await refreshFolderView(currentFolderId);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setPanelSaveError(data.error ?? "Không thể lưu tên tài liệu");
+    }
+    setSavingName(false);
+  }
+
+  async function saveDescription() {
+    if (!selectedDoc) return;
+    setPanelSaveError("");
+    setSavingDescription(true);
+    const res = await fetch(`/api/documents/${selectedDoc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         description: editDescription.trim() || null,
       }),
-    })
+    });
     if (res.ok) {
-      setSelectedDoc(await res.json())
-      await refreshFolderView(currentFolderId)
+      setSelectedDoc(await res.json());
+      await refreshFolderView(currentFolderId);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setPanelSaveError(data.error ?? "Không thể lưu mô tả");
     }
-    setSavingMeta(false)
+    setSavingDescription(false);
+  }
+
+  async function saveContent() {
+    if (!selectedDoc) return;
+    const content = editContent.trim();
+    if (!content) {
+      setPanelSaveError("Nội dung không được để trống");
+      return;
+    }
+    setPanelSaveError("");
+    setSavingContent(true);
+    const res = await fetch(`/api/documents/${selectedDoc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setSelectedDoc(updated);
+      setPreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              content,
+            }
+          : prev,
+      );
+      await refreshFolderView(currentFolderId);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setPanelSaveError(data.error ?? "Không thể lưu nội dung đã chỉnh sửa");
+    }
+    setSavingContent(false);
   }
 
   async function saveTags() {
-    if (!selectedDoc) return
-    setSavingTags(true)
+    if (!selectedDoc) return;
+    setSavingTags(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag_ids: selectedTagIds }),
-    })
+    });
     if (res.ok) {
-      const updated = await res.json()
-      setSelectedDoc(updated)
-      await refreshFolderView(currentFolderId)
+      const updated = await res.json();
+      setSelectedDoc(updated);
+      await refreshFolderView(currentFolderId);
     }
-    setSavingTags(false)
+    setSavingTags(false);
   }
 
   async function saveFolder() {
-    if (!selectedDoc) return
-    setSavingFolder(true)
+    if (!selectedDoc) return;
+    setSavingFolder(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ folder_id: selectedFolderId }),
-    })
+    });
     if (res.ok) {
-      const updated = await res.json()
-      setSelectedDoc(updated)
-      await refreshFolderView(currentFolderId)
+      const updated = await res.json();
+      setSelectedDoc(updated);
+      await refreshFolderView(currentFolderId);
     }
-    setSavingFolder(false)
+    setSavingFolder(false);
   }
 
   async function reprocessOcr() {
-    if (!selectedDoc) return
-    setReprocessingOcr(true)
-    const res = await fetch(`/api/documents/${selectedDoc.id}/reprocess`, { method: 'POST' })
+    if (!selectedDoc) return;
+    setReprocessingOcr(true);
+    const res = await fetch(`/api/documents/${selectedDoc.id}/reprocess`, {
+      method: "POST",
+    });
     if (res.ok) {
-      await refreshFolderView(currentFolderId)
+      await refreshFolderView(currentFolderId);
       if (selectedDoc) {
-        const previewRes = await fetch(`/api/documents/${selectedDoc.id}/preview`)
-        if (previewRes.ok) setPreview(await previewRes.json())
+        const previewRes = await fetch(
+          `/api/documents/${selectedDoc.id}/preview`,
+        );
+        if (previewRes.ok) setPreview(await previewRes.json());
       }
     }
-    setReprocessingOcr(false)
+    setReprocessingOcr(false);
   }
 
   const fetchTrash = useCallback(async () => {
-    setTrashLoading(true)
-    const res = await fetch('/api/documents?trash=1')
-    if (res.ok) setTrashDocs(await res.json())
-    setTrashLoading(false)
-  }, [])
+    setTrashLoading(true);
+    const res = await fetch("/api/documents?trash=1");
+    if (res.ok) setTrashDocs(await res.json());
+    setTrashLoading(false);
+  }, []);
 
   useEffect(() => {
-    if (trashMode) void fetchTrash()
-  }, [trashMode, fetchTrash])
+    if (trashMode) void fetchTrash();
+  }, [trashMode, fetchTrash]);
 
   async function restoreDoc(documentId: string) {
-    const res = await fetch(`/api/documents/${documentId}/restore`, { method: 'POST' })
-    if (res.ok) {
-      setTrashDocs((prev) => prev.filter((d) => d.id !== documentId))
-      await refreshFolderView(currentFolderId)
+    setTrashAction({ id: documentId, type: "restore" });
+    try {
+      const res = await fetch(`/api/documents/${documentId}/restore`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        setTrashDocs((prev) => prev.filter((d) => d.id !== documentId));
+        await refreshFolderView(currentFolderId);
+      }
+    } finally {
+      setTrashAction((prev) => (prev?.id === documentId ? null : prev));
     }
   }
 
   async function purgeDoc(documentId: string) {
     const ok = await confirm({
-      title: 'Xóa vĩnh viễn?',
-      description: 'Không thể khôi phục sau khi xóa.',
-      confirmLabel: 'Xóa vĩnh viễn',
-    })
-    if (!ok) return
-    const res = await fetch(`/api/documents/${documentId}`, { method: 'DELETE' })
-    if (res.ok) {
-      setTrashDocs((prev) => prev.filter((d) => d.id !== documentId))
+      title: "Xóa vĩnh viễn?",
+      description: "Không thể khôi phục sau khi xóa.",
+      confirmLabel: "Xóa vĩnh viễn",
+    });
+    if (!ok) return;
+    setTrashAction({ id: documentId, type: "purge" });
+    try {
+      const res = await fetch(`/api/documents/${documentId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setTrashDocs((prev) => prev.filter((d) => d.id !== documentId));
+      }
+    } finally {
+      setTrashAction((prev) => (prev?.id === documentId ? null : prev));
     }
   }
 
   async function handleDelete(documentId: string) {
     const ok = await confirm({
-      title: 'Xóa mục này?',
-      description: 'Mục sẽ được chuyển vào thùng rác.',
-      confirmLabel: 'Xóa',
-    })
-    if (!ok) return
-    await fetch(`/api/documents/${documentId}`, { method: 'DELETE' })
-    if (selectedDoc?.id === documentId) closePreview()
-    await refreshFolderView(currentFolderId)
+      title: "Xóa mục này?",
+      description: "Mục sẽ được chuyển vào thùng rác.",
+      confirmLabel: "Xóa",
+    });
+    if (!ok) return;
+    markDeletingDoc(documentId);
+    try {
+      await fetch(`/api/documents/${documentId}`, { method: "DELETE" });
+      if (selectedDoc?.id === documentId) closePreview();
+      await refreshFolderView(currentFolderId);
+    } finally {
+      unmarkDeletingDoc(documentId);
+    }
   }
 
   return (
@@ -647,44 +821,47 @@ export default function DocumentsPage() {
           fixed inset-y-0 left-0 z-40 w-[min(16rem,85vw)] border-r bg-background flex flex-col
           transition-transform duration-200 ease-out
           md:static md:z-auto md:w-52 md:shrink-0 md:translate-x-0 md:bg-muted/20
-          ${sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'}
+          ${sidebarOpen ? "translate-x-0 shadow-xl" : "-translate-x-full md:translate-x-0"}
         `}
       >
-        <div className="p-3 border-b flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Loại tài liệu</p>
+        <div className="border-b flex items-center justify-end p-2 md:hidden">
           <button
             type="button"
-            className="md:hidden h-7 w-7 rounded-md border border-input text-xs hover:bg-muted"
+            className="h-7 w-7 rounded-md border border-input text-xs hover:bg-muted"
             onClick={() => setSidebarOpen(false)}
             aria-label="Đóng"
           >
             ✕
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto p-2 space-y-0.5 md:pt-2">
           {SIDEBAR_TYPES.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => {
-                setTypeFilter(item.id)
-                setSidebarOpen(false)
+                setTypeFilter(item.id);
+                setSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
                 typeFilter === item.id
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-foreground hover:bg-muted'
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-foreground hover:bg-muted"
               }`}
             >
               {item.icon}
               <span className="flex-1 text-left">{item.label}</span>
-              <span className="text-xs text-muted-foreground">{typeCounts[item.id] ?? 0}</span>
+              <span className="text-xs text-muted-foreground">
+                {typeCounts[item.id] ?? 0}
+              </span>
             </button>
           ))}
         </nav>
         <div className="p-2 border-t space-y-2">
           <div className="flex items-center justify-between px-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tag</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Tag
+            </p>
             <button
               type="button"
               onClick={() => setShowTagManager(true)}
@@ -697,11 +874,13 @@ export default function DocumentsPage() {
             <button
               type="button"
               onClick={() => {
-                setTagFilter('all')
-                setSidebarOpen(false)
+                setTagFilter("all");
+                setSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                tagFilter === 'all' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
+                tagFilter === "all"
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "hover:bg-muted"
               }`}
             >
               <Tag className="h-3.5 w-3.5" />
@@ -712,21 +891,28 @@ export default function DocumentsPage() {
                 key={tag.id}
                 type="button"
                 onClick={() => {
-                  setTagFilter(tag.id)
-                  setSidebarOpen(false)
+                  setTagFilter(tag.id);
+                  setSidebarOpen(false);
                 }}
                 className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                  tagFilter === tag.id ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-muted'
+                  tagFilter === tag.id
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "hover:bg-muted"
                 }`}
               >
-                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: tag.color }}
+                />
                 <span className="truncate">{tag.name}</span>
               </button>
             ))}
           </div>
         </div>
         <div className="p-2 border-t">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-2 mb-2">Trạng thái</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-2 mb-2">
+            Trạng thái
+          </p>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -743,11 +929,13 @@ export default function DocumentsPage() {
           <button
             type="button"
             onClick={() => {
-              setTrashMode((v) => !v)
-              setSidebarOpen(false)
+              setTrashMode((v) => !v);
+              setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
-              trashMode ? 'bg-destructive/10 text-destructive font-medium' : 'text-foreground hover:bg-muted'
+              trashMode
+                ? "bg-destructive/10 text-destructive font-medium"
+                : "text-foreground hover:bg-muted"
             }`}
           >
             <Trash2 className="h-4 w-4" />
@@ -774,8 +962,11 @@ export default function DocumentsPage() {
               variant="ghost"
               className="h-9 px-2"
               onClick={() => {
-                const parent = breadcrumb.length > 2 ? breadcrumb[breadcrumb.length - 2].id : null
-                navigateToFolder(parent)
+                const parent =
+                  breadcrumb.length > 2
+                    ? breadcrumb[breadcrumb.length - 2].id
+                    : null;
+                navigateToFolder(parent);
               }}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -802,33 +993,95 @@ export default function DocumentsPage() {
           <div className="flex rounded-md border border-input overflow-hidden">
             <button
               type="button"
-              onClick={() => setViewMode('grid')}
-              className={`p-2 cursor-pointer ${viewMode === 'grid' ? 'bg-muted' : 'hover:bg-muted/50'}`}
+              onClick={() => setViewMode("grid")}
+              className={`p-2 cursor-pointer ${viewMode === "grid" ? "bg-muted" : "hover:bg-muted/50"}`}
               title="Lưới"
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
             <button
               type="button"
-              onClick={() => setViewMode('list')}
-              className={`p-2 cursor-pointer ${viewMode === 'list' ? 'bg-muted' : 'hover:bg-muted/50'}`}
+              onClick={() => setViewMode("list")}
+              className={`p-2 cursor-pointer ${viewMode === "list" ? "bg-muted" : "hover:bg-muted/50"}`}
               title="Danh sách"
             >
               <List className="h-4 w-4" />
             </button>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setShowNewFolder((v) => !v)}>
-            <FolderPlus className="h-4 w-4 mr-1.5" />
-            Thư mục
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowUploadPanel((v) => !v)}>
-            <Upload className="h-4 w-4 mr-1.5" />
-            Upload
-          </Button>
-          <Button size="sm" onClick={openCreateNoteModal}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Ghi chú
-          </Button>
+
+          <div
+            className="hidden sm:flex -my-2.5 sm:-my-3 self-stretch items-stretch shrink-0 px-0.5"
+            aria-hidden
+          >
+            <div className="w-px bg-border -skew-x-12" />
+          </div>
+
+          <div className="relative shrink-0" ref={addMenuRef}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shadow-sm border-primary/25 bg-background hover:bg-muted/40"
+              onClick={() => setAddMenuOpen((v) => !v)}
+              aria-expanded={addMenuOpen}
+              aria-haspopup="menu"
+            >
+              <span
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-sky-300 via-violet-400 to-pink-400 text-white mr-1.5 shrink-0 shadow-sm"
+                aria-hidden
+              >
+                <Plus className="h-3 w-3 stroke-[3]" />
+              </span>
+              Thêm mới
+            </Button>
+            {addMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1.5 z-50 min-w-[11rem] rounded-lg border bg-popover py-1 shadow-lg"
+                role="menu"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer text-left"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setShowNewFolder(false);
+                    setShowUploadPanel(true);
+                  }}
+                >
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                  Upload file
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer text-left"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setShowUploadPanel(false);
+                    setShowNewFolder(true);
+                  }}
+                >
+                  <FolderPlus className="h-4 w-4 text-muted-foreground" />
+                  Thư mục mới
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer text-left"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    setShowUploadPanel(false);
+                    setShowNewFolder(false);
+                    openCreateNoteModal();
+                  }}
+                >
+                  <StickyNote className="h-4 w-4 text-muted-foreground" />
+                  Ghi chú mới
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {showNewFolder && (
@@ -840,13 +1093,21 @@ export default function DocumentsPage() {
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="Tên thư mục..."
                 className="mt-1 h-9 text-sm"
-                onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+                onKeyDown={(e) => e.key === "Enter" && createFolder()}
               />
             </div>
-            <Button size="sm" onClick={createFolder} disabled={creatingFolder || !newFolderName.trim()}>
-              {creatingFolder ? 'Đang tạo...' : 'Tạo'}
+            <Button
+              size="sm"
+              onClick={createFolder}
+              disabled={creatingFolder || !newFolderName.trim()}
+            >
+              {creatingFolder ? "Đang tạo..." : "Tạo"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setShowNewFolder(false)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowNewFolder(false)}
+            >
               Đóng
             </Button>
           </div>
@@ -854,7 +1115,10 @@ export default function DocumentsPage() {
 
         {showUploadPanel && (
           <div className="shrink-0 border-b bg-muted/30 px-4 py-4">
-            <form onSubmit={handleUpload} className="flex w-full flex-col gap-4">
+            <form
+              onSubmit={handleUpload}
+              className="flex w-full flex-col gap-4"
+            >
               <FileDropzone
                 disabled={uploading}
                 selectedFile={selectedFile}
@@ -865,9 +1129,10 @@ export default function DocumentsPage() {
                 <Textarea
                   value={uploadDescription}
                   onChange={(e) => setUploadDescription(e.target.value)}
-                  placeholder="Thêm mô tả ngắn để dễ tìm lại tài liệu sau này..."
-                  rows={2}
-                  className="mt-1.5 w-full resize-y text-sm min-h-[4.5rem]"
+                  placeholder="Thêm mô tả để dễ tìm lại tài liệu sau này..."
+                  rows={4}
+                  maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
+                  className="mt-1.5 w-full resize-y text-sm min-h-24"
                 />
               </div>
               {uploading && uploadProgress !== null && (
@@ -875,39 +1140,50 @@ export default function DocumentsPage() {
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
                     <span>
                       {uploadProgress < 100
-                        ? 'Đang tải lên...'
-                        : 'Đang tạo phụ đề (một lần)...'}
+                        ? "Đang tải lên..."
+                        : "Đang tạo phụ đề (một lần)..."}
                     </span>
-                    <span>{uploadProgress < 100 ? `${uploadProgress}%` : '...'}</span>
+                    <span>
+                      {uploadProgress < 100 ? `${uploadProgress}%` : "..."}
+                    </span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className="h-full rounded-full bg-primary transition-all duration-300"
-                      style={{ width: uploadProgress < 100 ? `${uploadProgress}%` : '100%' }}
+                      style={{
+                        width:
+                          uploadProgress < 100 ? `${uploadProgress}%` : "100%",
+                      }}
                     />
                   </div>
                 </div>
               )}
               <div className="flex gap-2">
-                <Button type="submit" size="sm" disabled={uploading || !selectedFile}>
-                  {uploading ? 'Đang upload...' : 'Tải lên'}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={uploading || !selectedFile}
+                >
+                  {uploading ? "Đang upload..." : "Tải lên"}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setShowUploadPanel(false)
-                    setSelectedFile(null)
-                    setUploadDescription('')
-                    setUploadError('')
+                    setShowUploadPanel(false);
+                    setSelectedFile(null);
+                    setUploadDescription("");
+                    setUploadError("");
                   }}
                 >
                   Đóng
                 </Button>
               </div>
             </form>
-            {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
+            {uploadError && (
+              <p className="text-sm text-destructive mt-2">{uploadError}</p>
+            )}
           </div>
         )}
 
@@ -915,7 +1191,7 @@ export default function DocumentsPage() {
         <div className="flex-1 flex min-h-0 overflow-hidden relative">
           <div
             className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 ${
-              selectedDoc ? 'hidden sm:block' : ''
+              selectedDoc ? "hidden sm:block" : ""
             }`}
           >
             {trashMode ? (
@@ -925,10 +1201,29 @@ export default function DocumentsPage() {
                     <Trash2 className="h-4 w-4 text-destructive" />
                     Thùng rác · {trashDocs.length} mục
                   </h2>
-                  <p className="text-xs text-muted-foreground">Tự xóa vĩnh viễn sau 30 ngày</p>
+                  <p className="text-xs text-muted-foreground">
+                    Tự xóa vĩnh viễn sau 30 ngày
+                  </p>
                 </div>
                 {trashLoading ? (
-                  <p className="text-sm text-muted-foreground">Đang tải...</p>
+                  <div
+                    className="space-y-2"
+                    aria-busy="true"
+                    aria-label="Đang tải thùng rác"
+                  >
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                      >
+                        <div className="h-8 w-8 shrink-0 rounded bg-muted animate-pulse" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 w-40 rounded bg-muted animate-pulse" />
+                          <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : trashDocs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                     <Trash2 className="h-12 w-12 mb-3 opacity-40" />
@@ -936,162 +1231,236 @@ export default function DocumentsPage() {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    {trashDocs.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
-                      >
-                        <FileIcon type={doc.file_type} size="sm" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm truncate">{doc.filename}</p>
-                          <p className="text-xs text-muted-foreground">
-                            Đã xóa{' '}
-                            {doc.deleted_at
-                              ? new Date(doc.deleted_at).toLocaleDateString('vi-VN')
-                              : ''}
-                          </p>
+                    {trashDocs.map((doc) => {
+                      const isRestoring =
+                        trashAction?.id === doc.id &&
+                        trashAction.type === "restore";
+                      const isPurging =
+                        trashAction?.id === doc.id &&
+                        trashAction.type === "purge";
+                      const rowBusy = isRestoring || isPurging;
+                      return (
+                        <div
+                          key={doc.id}
+                          className={`relative flex items-center gap-3 rounded-lg border border-border px-3 py-2 ${
+                            rowBusy ? "opacity-90" : ""
+                          }`}
+                        >
+                          {rowBusy && (
+                            <div
+                              className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/85 backdrop-blur-[1px]"
+                              aria-live="polite"
+                            >
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <div
+                                  className="h-4 w-4 rounded-full border-2 border-primary border-t-transparent animate-spin"
+                                  aria-hidden
+                                />
+                                {isRestoring
+                                  ? "Đang khôi phục..."
+                                  : "Đang xóa vĩnh viễn..."}
+                              </div>
+                            </div>
+                          )}
+                          <FileIcon type={doc.file_type} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm truncate">{doc.filename}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Đã xóa{" "}
+                              {doc.deleted_at
+                                ? new Date(doc.deleted_at).toLocaleDateString(
+                                    "vi-VN",
+                                  )
+                                : ""}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8"
+                            disabled={rowBusy}
+                            onClick={() => restoreDoc(doc.id)}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                            Khôi phục
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-destructive hover:text-destructive"
+                            disabled={rowBusy}
+                            onClick={() => purgeDoc(doc.id)}
+                          >
+                            Xóa vĩnh viễn
+                          </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          onClick={() => restoreDoc(doc.id)}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                          Khôi phục
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 text-destructive hover:text-destructive"
-                          onClick={() => purgeDoc(doc.id)}
-                        >
-                          Xóa vĩnh viễn
-                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-medium">
+                    {breadcrumb[breadcrumb.length - 1]?.name ?? "Gốc"} ·{" "}
+                    {folders.length} thư mục · {filteredDocs.length} tài liệu
+                  </h2>
+                </div>
+
+                {loading ? (
+                  <div
+                    className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"
+                    aria-busy="true"
+                    aria-label="Đang tải tài liệu"
+                  >
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="rounded-xl border bg-card p-3 space-y-2"
+                      >
+                        <div className="h-10 w-10 mx-auto rounded-md bg-muted animate-pulse" />
+                        <div className="h-3 w-full rounded bg-muted animate-pulse" />
+                        <div className="h-3 w-2/3 mx-auto rounded bg-muted animate-pulse" />
                       </div>
                     ))}
                   </div>
-                )}
-              </>
-            ) : (
-            <>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-medium">
-                {breadcrumb[breadcrumb.length - 1]?.name ?? 'Gốc'} · {folders.length} thư mục ·{' '}
-                {filteredDocs.length} tài liệu
-              </h2>
-            </div>
-
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Đang tải...</p>
-            ) : folders.length === 0 && filteredDocs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                <FolderIcon className="h-12 w-12 mb-3 opacity-40" />
-                <p className="text-sm">Thư mục trống</p>
-                <p className="text-xs mt-1">Tạo thư mục hoặc upload file mới</p>
-              </div>
-            ) : (
-              <>
-                {viewMode === 'grid' ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
-                    {folders.map((folder) => (
-                      <FolderGridItem
-                        key={folder.id}
-                        folder={folder}
-                        onOpen={() => navigateToFolder(folder.id)}
-                        onDelete={() => deleteFolder(folder.id)}
-                      />
-                    ))}
+                ) : folders.length === 0 && filteredDocs.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                    <FolderIcon className="h-12 w-12 mb-3 opacity-40" />
+                    <p className="text-sm">Thư mục trống</p>
+                    <p className="text-xs mt-1">
+                      Tạo thư mục hoặc upload file mới
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-1 mb-4">
-                    {folders.map((folder) => (
-                      <FolderListItem
-                        key={folder.id}
-                        folder={folder}
-                        onOpen={() => navigateToFolder(folder.id)}
-                        onDelete={() => deleteFolder(folder.id)}
-                      />
-                    ))}
-                  </div>
-                )}
+                  <>
+                    {viewMode === "grid" ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
+                        {folders.map((folder) => (
+                          <FolderGridItem
+                            key={folder.id}
+                            folder={folder}
+                            onOpen={() => navigateToFolder(folder.id)}
+                            onDelete={() => deleteFolder(folder.id)}
+                            busy={deletingFolderIds.includes(folder.id)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-1 mb-4">
+                        {folders.map((folder) => (
+                          <FolderListItem
+                            key={folder.id}
+                            folder={folder}
+                            onOpen={() => navigateToFolder(folder.id)}
+                            onDelete={() => deleteFolder(folder.id)}
+                            busy={deletingFolderIds.includes(folder.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
 
-                {filteredDocs.length === 0 ? (
-                  folders.length > 0 ? null : (
-                    <p className="text-sm text-muted-foreground">Không có tài liệu</p>
-                  )
-                ) : viewMode === 'grid' ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                    {filteredDocs.map((doc) => (
-                      <DriveGridItem
-                        key={doc.id}
-                        doc={doc}
-                        selected={selectedDoc?.id === doc.id}
-                        onOpen={() => openDocument(doc)}
-                        onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
-                        onDelete={() => handleDelete(doc.id)}
-                        fileIcon={<FileIcon type={doc.file_type} />}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {filteredDocs.map((doc) => (
-                      <DriveListItem
-                        key={doc.id}
-                        doc={doc}
-                        selected={selectedDoc?.id === doc.id}
-                        onOpen={() => openDocument(doc)}
-                        onEdit={doc.file_type === 'note' ? () => openEditNoteModal(doc) : undefined}
-                        onDelete={() => handleDelete(doc.id)}
-                        fileIcon={<FileIcon type={doc.file_type} size="sm" />}
-                        formatBytes={formatBytes}
-                      />
-                    ))}
-                  </div>
+                    {filteredDocs.length === 0 ? (
+                      folders.length > 0 ? null : (
+                        <p className="text-sm text-muted-foreground">
+                          Không có tài liệu
+                        </p>
+                      )
+                    ) : viewMode === "grid" ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {filteredDocs.map((doc) => (
+                          <DriveGridItem
+                            key={doc.id}
+                            doc={doc}
+                            selected={selectedDoc?.id === doc.id}
+                            onOpen={() => openDocument(doc)}
+                            onEdit={
+                              doc.file_type === "note"
+                                ? () => openEditNoteModal(doc)
+                                : undefined
+                            }
+                            onDelete={() => handleDelete(doc.id)}
+                            fileIcon={<FileIcon type={doc.file_type} />}
+                            busy={deletingDocIds.includes(doc.id)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {filteredDocs.map((doc) => (
+                          <DriveListItem
+                            key={doc.id}
+                            doc={doc}
+                            selected={selectedDoc?.id === doc.id}
+                            onOpen={() => openDocument(doc)}
+                            onEdit={
+                              doc.file_type === "note"
+                                ? () => openEditNoteModal(doc)
+                                : undefined
+                            }
+                            onDelete={() => handleDelete(doc.id)}
+                            fileIcon={
+                              <FileIcon type={doc.file_type} size="sm" />
+                            }
+                            formatBytes={formatBytes}
+                            busy={deletingDocIds.includes(doc.id)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
-            )}
-            </>
             )}
           </div>
 
           {/* Preview panel — full screen on mobile */}
           {selectedDoc && (
             <div className="absolute inset-0 z-20 sm:static sm:z-auto flex min-h-0 bg-background">
-            <DocumentPreviewPanel
-              doc={selectedDoc}
-              preview={preview}
-              previewLoading={previewLoading}
-              editName={editName}
-              editDescription={editDescription}
-              savingMeta={savingMeta}
-              typeLabels={TYPE_LABELS_LOCAL}
-              fileIcon={<FileIcon type={selectedDoc.file_type} />}
-              formatBytes={formatBytes}
-              allTags={tags}
-              allFolders={allFolders}
-              selectedTagIds={selectedTagIds}
-              selectedFolderId={selectedFolderId}
-              savingTags={savingTags}
-              savingFolder={savingFolder}
-              onClose={closePreview}
-              onEditName={setEditName}
-              onEditDescription={setEditDescription}
-              onSaveMetadata={saveMetadata}
-              onTagIdsChange={setSelectedTagIds}
-              onSaveTags={saveTags}
-              onFolderChange={setSelectedFolderId}
-              onSaveFolder={saveFolder}
-              onReprocessOcr={isImageType(selectedDoc.file_type) ? reprocessOcr : undefined}
-              reprocessingOcr={reprocessingOcr}
-              onEditNote={
-                selectedDoc.file_type === 'note'
-                  ? () => openEditNoteModal(selectedDoc)
-                  : undefined
-              }
-              onDelete={() => handleDelete(selectedDoc.id)}
-            />
+              <DocumentPreviewPanel
+                doc={selectedDoc}
+                preview={preview}
+                previewLoading={previewLoading}
+                editName={editName}
+                editDescription={editDescription}
+              editContent={editContent}
+                savingName={savingName}
+                savingDescription={savingDescription}
+              savingContent={savingContent}
+              saveError={panelSaveError}
+                typeLabels={TYPE_LABELS_LOCAL}
+                fileIcon={<FileIcon type={selectedDoc.file_type} />}
+                formatBytes={formatBytes}
+                allTags={tags}
+                allFolders={allFolders}
+                selectedTagIds={selectedTagIds}
+                selectedFolderId={selectedFolderId}
+                savingTags={savingTags}
+                savingFolder={savingFolder}
+                onClose={closePreview}
+                onEditName={setEditName}
+                onEditDescription={setEditDescription}
+              onEditContent={setEditContent}
+                onSaveName={saveName}
+                onSaveDescription={saveDescription}
+              onSaveContent={saveContent}
+                onTagIdsChange={setSelectedTagIds}
+                onSaveTags={saveTags}
+                onFolderChange={setSelectedFolderId}
+                onSaveFolder={saveFolder}
+                onReprocessOcr={
+                  isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
+                }
+                reprocessingOcr={reprocessingOcr}
+                onEditNote={
+                  selectedDoc.file_type === "note"
+                    ? () => openEditNoteModal(selectedDoc)
+                    : undefined
+                }
+                onDelete={() => handleDelete(selectedDoc.id)}
+                deleting={deletingDocIds.includes(selectedDoc.id)}
+              />
             </div>
           )}
         </div>
@@ -1116,12 +1485,12 @@ export default function DocumentsPage() {
         <TagManager
           tags={tags}
           onTagsChange={async () => {
-            await fetchTags()
-            await refreshFolderView(currentFolderId)
+            await fetchTags();
+            await refreshFolderView(currentFolderId);
           }}
           onClose={() => setShowTagManager(false)}
         />
       )}
     </div>
-  )
+  );
 }
