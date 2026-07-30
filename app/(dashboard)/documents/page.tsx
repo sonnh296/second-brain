@@ -17,6 +17,8 @@ import {
   Trash2,
   RotateCcw,
   StickyNote,
+  Sparkles,
+  Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +41,10 @@ import type {
   NoteModalState,
 } from "@/components/documents/types";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Dialog } from "@/components/ui/dialog";
+import { MarkdownContent } from "@/components/markdown-content";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslations } from "next-intl";
 import {
   FolderGridItem,
   FolderListItem,
@@ -57,7 +62,12 @@ import {
   waitForDocumentProcessing,
 } from "@/lib/upload/put-with-progress";
 import { formatBytes } from "@/lib/usage/format";
-import type { Document, Tag as TagType, Folder, DocumentStatus } from "@/lib/db/types";
+import type {
+  Document,
+  Tag as TagType,
+  Folder,
+  DocumentStatus,
+} from "@/lib/db/types";
 
 type DocStatus = DocumentStatus;
 
@@ -72,33 +82,40 @@ const STATUS_LABELS: Record<DocStatus, string> = {
 
 const SIDEBAR_TYPES: {
   id: TypeFilter;
-  label: string;
+  labelKey: "all" | "favorites" | "notes" | "pdf" | "word" | "text";
   icon: React.ReactNode;
 }[] = [
-  { id: "all", label: "Tất cả", icon: <File className="h-4 w-4" /> },
+  { id: "all", labelKey: "all", icon: <File className="h-4 w-4" /> },
+  {
+    id: "favorite",
+    labelKey: "favorites",
+    icon: <Star className="h-4 w-4 text-amber-500" />,
+  },
   {
     id: "note",
-    label: "Ghi chú",
+    labelKey: "notes",
     icon: <FileText className="h-4 w-4 text-fuchsia-500" />,
   },
   {
     id: "pdf",
-    label: "PDF",
+    labelKey: "pdf",
     icon: <FileText className="h-4 w-4 text-red-500" />,
   },
   {
     id: "docx",
-    label: "Word",
+    labelKey: "word",
     icon: <FileType className="h-4 w-4 text-blue-500" />,
   },
   {
     id: "txt",
-    label: "Văn bản",
+    labelKey: "text",
     icon: <FileText className="h-4 w-4 text-muted-foreground" />,
   },
 ];
 
 export default function DocumentsPage() {
+  const td = useTranslations("documents");
+  const tc = useTranslations("common");
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,6 +136,18 @@ export default function DocumentsPage() {
   const [breadcrumb, setBreadcrumb] = useState<
     { id: string | null; name: string }[]
   >([{ id: null, name: "Gốc" }]);
+
+  useEffect(() => {
+    setBreadcrumb((prev) => {
+      if (prev.length === 1 && prev[0].id === null) {
+        return [{ id: null, name: td("root") }];
+      }
+      if (prev[0]?.id === null) {
+        return [{ id: null, name: td("root") }, ...prev.slice(1)];
+      }
+      return prev;
+    });
+  }, [td]);
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -151,6 +180,10 @@ export default function DocumentsPage() {
   const [deletingFolderIds, setDeletingFolderIds] = useState<string[]>([]);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryText, setSummaryText] = useState("");
+  const [summaryError, setSummaryError] = useState("");
 
   useEffect(() => {
     if (!addMenuOpen) return;
@@ -200,24 +233,33 @@ export default function DocumentsPage() {
 
   const loadBreadcrumb = useCallback(async (folderId: string | null) => {
     if (!folderId) {
-      setBreadcrumb([{ id: null, name: "Gốc" }]);
+      setBreadcrumb([{ id: null, name: td("root") }]);
       return;
     }
     const res = await fetch(`/api/folders/${folderId}`);
     if (res.ok) {
       const data = await res.json();
-      setBreadcrumb([{ id: null, name: "Gốc" }, ...data.breadcrumb]);
+      setBreadcrumb([{ id: null, name: td("root") }, ...data.breadcrumb]);
     }
-  }, []);
+  }, [td]);
 
-  const fetchDocuments = useCallback(async (folderId: string | null) => {
-    const q = folderId ? `?folder_id=${folderId}` : "?folder_id=root";
+  const fetchDocuments = useCallback(async (folderId: string | null, favorite = false) => {
+    const q = favorite
+      ? "?favorite=1"
+      : folderId
+        ? `?folder_id=${folderId}`
+        : "?folder_id=root";
     const res = await fetch(`/api/documents${q}`);
     if (res.ok) setDocuments(await res.json());
   }, []);
 
   const refreshFolderView = useCallback(
     async (folderId: string | null) => {
+      const favorite = typeFilter === "favorite";
+      if (favorite) {
+        await Promise.all([fetchDocuments(null, true), fetchAllFolders()]);
+        return;
+      }
       await Promise.all([
         fetchFolders(folderId),
         fetchDocuments(folderId),
@@ -225,14 +267,14 @@ export default function DocumentsPage() {
         fetchAllFolders(),
       ]);
     },
-    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders],
+    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders, typeFilter],
   );
 
   useEffect(() => {
     Promise.all([refreshFolderView(currentFolderId), fetchTags()]).finally(() =>
       setLoading(false),
     );
-  }, [currentFolderId, refreshFolderView, fetchTags]);
+  }, [currentFolderId, typeFilter, refreshFolderView, fetchTags]);
 
   useDocumentPolling(documents, setDocuments);
 
@@ -321,7 +363,9 @@ export default function DocumentsPage() {
 
   const filteredDocs = useMemo(() => {
     let result = [...documents];
-    if (typeFilter !== "all") {
+    if (typeFilter === "favorite") {
+      result = result.filter((d) => d.is_favorite);
+    } else if (typeFilter !== "all") {
       result = result.filter((d) => d.file_type === typeFilter);
     }
     if (statusFilter !== "all") {
@@ -349,12 +393,42 @@ export default function DocumentsPage() {
   }, [documents, typeFilter, statusFilter, tagFilter, searchQuery, sortBy]);
 
   const typeCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: documents.length };
+    const counts: Record<string, number> = {
+      all: documents.length,
+      favorite: documents.filter((d) => d.is_favorite).length,
+    };
     for (const d of documents) {
       counts[d.file_type] = (counts[d.file_type] ?? 0) + 1;
     }
     return counts;
   }, [documents]);
+
+  async function toggleFavorite(doc: Document) {
+    const next = !doc.is_favorite;
+    setDocuments((prev) =>
+      prev.map((d) => (d.id === doc.id ? { ...d, is_favorite: next } : d)),
+    );
+    if (selectedDoc?.id === doc.id) {
+      setSelectedDoc({ ...selectedDoc, is_favorite: next });
+    }
+    const res = await fetch(`/api/documents/${doc.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_favorite: next }),
+    });
+    if (!res.ok) {
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === doc.id ? { ...d, is_favorite: doc.is_favorite } : d,
+        ),
+      );
+      if (selectedDoc?.id === doc.id) {
+        setSelectedDoc({ ...selectedDoc, is_favorite: doc.is_favorite });
+      }
+    } else if (typeFilter === "favorite" && !next) {
+      setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+    }
+  }
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -559,7 +633,11 @@ export default function DocumentsPage() {
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(
+        selectedDoc.file_type === "note"
+          ? { note_content: content }
+          : { content },
+      ),
     });
     if (res.ok) {
       const updated = await res.json();
@@ -647,9 +725,56 @@ export default function DocumentsPage() {
     }
   }
 
+  async function handleAiSummary() {
+    setSummaryOpen(true);
+    setSummaryLoading(true);
+    setSummaryError("");
+    setSummaryText("");
+    try {
+      const res = await fetch("/api/documents/summarize", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSummaryError(data.error ?? td("aiFailed"));
+        return;
+      }
+      setSummaryText(data.summary ?? "");
+    } catch {
+      setSummaryError(td("aiConnError"));
+    } finally {
+      setSummaryLoading(false);
+    }
+  }
+
   return (
     <div className="relative flex h-full">
       {confirmDialog}
+      <Dialog
+        open={summaryOpen}
+        title={td("aiSummaryTitle")}
+        onClose={() => !summaryLoading && setSummaryOpen(false)}
+        maxWidth="max-w-lg"
+        footer={
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={summaryLoading}
+            onClick={() => setSummaryOpen(false)}
+          >
+            {tc("close")}
+          </Button>
+        }
+      >
+        {summaryLoading && (
+          <p className="text-sm text-muted-foreground">{td("aiAnalyzing")}</p>
+        )}
+        {summaryError && (
+          <p className="text-sm text-destructive">{summaryError}</p>
+        )}
+        {!summaryLoading && !summaryError && summaryText && (
+          <MarkdownContent content={summaryText} />
+        )}
+      </Dialog>
       {sidebarOpen && (
         <button
           type="button"
@@ -685,6 +810,7 @@ export default function DocumentsPage() {
               type="button"
               onClick={() => {
                 setTypeFilter(item.id);
+                setTrashMode(false);
                 setSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
@@ -694,7 +820,7 @@ export default function DocumentsPage() {
               }`}
             >
               {item.icon}
-              <span className="flex-1 text-left">{item.label}</span>
+              <span className="flex-1 text-left">{td(item.labelKey)}</span>
               <span className="text-xs text-muted-foreground">
                 {typeCounts[item.id] ?? 0}
               </span>
@@ -774,6 +900,7 @@ export default function DocumentsPage() {
             type="button"
             onClick={() => {
               setTrashMode((v) => !v);
+              setTypeFilter("all");
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
@@ -783,7 +910,7 @@ export default function DocumentsPage() {
             }`}
           >
             <Trash2 className="h-4 w-4" />
-            <span className="flex-1 text-left">Thùng rác</span>
+            <span className="flex-1 text-left">{td("trash")}</span>
           </button>
         </div>
       </aside>
@@ -796,7 +923,7 @@ export default function DocumentsPage() {
             type="button"
             className="md:hidden h-9 w-9 shrink-0 rounded-md border border-input bg-background hover:bg-muted text-sm"
             onClick={() => setSidebarOpen(true)}
-            aria-label="Mở bộ lọc"
+            aria-label={td("openFilters")}
           >
             ☰
           </button>
@@ -816,13 +943,12 @@ export default function DocumentsPage() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
           )}
-          <FolderBreadcrumb items={breadcrumb} onNavigate={navigateToFolder} />
           <div className="relative flex-1 min-w-[140px] sm:min-w-[160px] max-w-md">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm trong kho dữ liệu..."
+              placeholder={td("searchPlaceholder")}
               className="pl-9 h-9 text-sm"
             />
           </div>
@@ -831,15 +957,15 @@ export default function DocumentsPage() {
             onChange={(e) => setSortBy(e.target.value as SortBy)}
             className="text-xs rounded-md border border-input bg-background px-2 py-1.5 h-9"
           >
-            <option value="date">Mới nhất</option>
-            <option value="name">Tên A-Z</option>
+            <option value="date">{td("sortNewest")}</option>
+            <option value="name">{td("sortName")}</option>
           </select>
           <div className="flex rounded-md border border-input overflow-hidden">
             <button
               type="button"
               onClick={() => setViewMode("grid")}
               className={`p-2 cursor-pointer ${viewMode === "grid" ? "bg-muted" : "hover:bg-muted/50"}`}
-              title="Lưới"
+              title={td("grid")}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
@@ -847,7 +973,7 @@ export default function DocumentsPage() {
               type="button"
               onClick={() => setViewMode("list")}
               className={`p-2 cursor-pointer ${viewMode === "list" ? "bg-muted" : "hover:bg-muted/50"}`}
-              title="Danh sách"
+              title={td("list")}
             >
               <List className="h-4 w-4" />
             </button>
@@ -876,7 +1002,7 @@ export default function DocumentsPage() {
               >
                 <Plus className="h-3 w-3 stroke-[3]" />
               </span>
-              Thêm mới
+              {td("addNew")}
             </Button>
             {addMenuOpen && (
               <div
@@ -894,7 +1020,7 @@ export default function DocumentsPage() {
                   }}
                 >
                   <Upload className="h-4 w-4 text-muted-foreground" />
-                  Upload file
+                  {td("uploadFile")}
                 </button>
                 <button
                   type="button"
@@ -907,7 +1033,7 @@ export default function DocumentsPage() {
                   }}
                 >
                   <FolderPlus className="h-4 w-4 text-muted-foreground" />
-                  Thư mục mới
+                  {td("newFolder")}
                 </button>
                 <button
                   type="button"
@@ -921,10 +1047,24 @@ export default function DocumentsPage() {
                   }}
                 >
                   <StickyNote className="h-4 w-4 text-muted-foreground" />
-                  Ghi chú mới
+                  {td("newNote")}
                 </button>
               </div>
             )}
+          </div>
+
+          <div className="ml-auto shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shadow-sm"
+              onClick={() => void handleAiSummary()}
+              disabled={summaryLoading}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5 text-amber-500" />
+              {summaryLoading ? td("aiSummarizing") : td("aiSummary")}
+            </Button>
           </div>
         </div>
 
@@ -1145,11 +1285,18 @@ export default function DocumentsPage() {
               </>
             ) : (
               <>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-medium">
-                    {breadcrumb[breadcrumb.length - 1]?.name ?? "Gốc"} ·{" "}
-                    {folders.length} thư mục · {filteredDocs.length} tài liệu
-                  </h2>
+                <div className="mb-3 flex items-center justify-between gap-2 min-w-0">
+                  {typeFilter === "favorite" ? (
+                    <h2 className="text-sm font-medium flex items-center gap-1.5">
+                      <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-400" />
+                      {td("favorites")}
+                    </h2>
+                  ) : (
+                    <FolderBreadcrumb
+                      items={breadcrumb}
+                      onNavigate={navigateToFolder}
+                    />
+                  )}
                 </div>
 
                 {loading ? (
@@ -1169,17 +1316,30 @@ export default function DocumentsPage() {
                       </div>
                     ))}
                   </div>
-                ) : folders.length === 0 && filteredDocs.length === 0 ? (
+                ) : (typeFilter === "favorite"
+                  ? filteredDocs.length === 0
+                  : folders.length === 0 && filteredDocs.length === 0) ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                    <FolderIcon className="h-12 w-12 mb-3 opacity-40" />
-                    <p className="text-sm">Thư mục trống</p>
-                    <p className="text-xs mt-1">
-                      Tạo thư mục hoặc upload file mới
+                    {typeFilter === "favorite" ? (
+                      <Star className="h-12 w-12 mb-3 opacity-40" />
+                    ) : (
+                      <FolderIcon className="h-12 w-12 mb-3 opacity-40" />
+                    )}
+                    <p className="text-sm">
+                      {typeFilter === "favorite"
+                        ? td("favoritesEmpty")
+                        : "Thư mục trống"}
                     </p>
+                    {typeFilter !== "favorite" && (
+                      <p className="text-xs mt-1">
+                        Tạo thư mục hoặc upload file mới
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <>
-                    {viewMode === "grid" ? (
+                    {typeFilter !== "favorite" &&
+                      (viewMode === "grid" ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
                         {folders.map((folder) => (
                           <FolderGridItem
@@ -1203,10 +1363,10 @@ export default function DocumentsPage() {
                           />
                         ))}
                       </div>
-                    )}
+                    ))}
 
                     {filteredDocs.length === 0 ? (
-                      folders.length > 0 ? null : (
+                      typeFilter !== "favorite" && folders.length > 0 ? null : (
                         <p className="text-sm text-muted-foreground">
                           Không có tài liệu
                         </p>
@@ -1225,6 +1385,7 @@ export default function DocumentsPage() {
                                 : undefined
                             }
                             onDelete={() => handleDelete(doc.id)}
+                            onToggleFavorite={() => void toggleFavorite(doc)}
                             fileIcon={<FileIcon type={doc.file_type} />}
                             busy={deletingDocIds.includes(doc.id)}
                           />
@@ -1244,6 +1405,7 @@ export default function DocumentsPage() {
                                 : undefined
                             }
                             onDelete={() => handleDelete(doc.id)}
+                            onToggleFavorite={() => void toggleFavorite(doc)}
                             fileIcon={
                               <FileIcon type={doc.file_type} size="sm" />
                             }
@@ -1268,11 +1430,11 @@ export default function DocumentsPage() {
                 previewLoading={previewLoading}
                 editName={editName}
                 editDescription={editDescription}
-              editContent={editContent}
+                editContent={editContent}
                 savingName={savingName}
                 savingDescription={savingDescription}
-              savingContent={savingContent}
-              saveError={panelSaveError}
+                savingContent={savingContent}
+                saveError={panelSaveError}
                 typeLabels={TYPE_LABELS_LOCAL}
                 fileIcon={<FileIcon type={selectedDoc.file_type} />}
                 formatBytes={formatBytes}
@@ -1285,10 +1447,10 @@ export default function DocumentsPage() {
                 onClose={closePreview}
                 onEditName={setEditName}
                 onEditDescription={setEditDescription}
-              onEditContent={setEditContent}
+                onEditContent={setEditContent}
                 onSaveName={saveName}
                 onSaveDescription={saveDescription}
-              onSaveContent={saveContent}
+                onSaveContent={saveContent}
                 onTagIdsChange={setSelectedTagIds}
                 onSaveTags={saveTags}
                 onFolderChange={setSelectedFolderId}

@@ -15,6 +15,7 @@ const UpdateDocumentSchema = z.object({
   content: z.string().max(200000).optional(),
   tag_ids: z.array(z.string().uuid()).max(20).optional(),
   folder_id: z.string().uuid().nullable().optional(),
+  is_favorite: z.boolean().optional(),
 })
 
 export async function PATCH(
@@ -50,6 +51,7 @@ export async function PATCH(
   const updates: Record<string, unknown> = {}
   if (parsed.data.filename !== undefined) updates.filename = parsed.data.filename
   if (parsed.data.description !== undefined) updates.description = parsed.data.description
+  if (parsed.data.is_favorite !== undefined) updates.is_favorite = parsed.data.is_favorite
 
   if (parsed.data.folder_id !== undefined) {
     if (parsed.data.folder_id) {
@@ -105,7 +107,7 @@ export async function PATCH(
       .update(updates)
       .eq('id', documentId)
       .select(
-        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, is_favorite, created_at'
       )
       .single()
 
@@ -117,7 +119,7 @@ export async function PATCH(
     const { data: existing } = await supabase
       .from('documents')
       .select(
-        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, is_favorite, created_at'
       )
       .eq('id', documentId)
       .single()
@@ -145,7 +147,7 @@ export async function PATCH(
       .eq('id', documentId)
       .eq('user_id', user.id)
       .select(
-        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, created_at'
+        'id, filename, file_type, status, description, note_content, file_size_bytes, chunk_count, error_message, folder_id, extracted_content, ocr_text, is_favorite, created_at'
       )
       .single()
     if (contentError || !refreshed) {

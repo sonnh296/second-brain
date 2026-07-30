@@ -67,9 +67,14 @@ export async function GET(req: NextRequest) {
   const service = createServiceSupabaseClient()
   const { data: profile } = await service
     .from('profiles')
-    .select('id, username, role')
+    .select('id, username, role, disabled_at')
     .eq('id', data.user.id)
     .maybeSingle()
+
+  if (profile?.disabled_at) {
+    await supabase.auth.signOut()
+    return NextResponse.redirect(new URL('/login?error=account_disabled', origin))
+  }
 
   if (!profile) {
     let username = usernameFromGoogleUser(

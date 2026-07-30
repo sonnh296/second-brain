@@ -105,13 +105,35 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileErr } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, disabled_at')
     .eq('id', data.user.id)
     .maybeSingle()
 
-  const role = profile?.role ?? 'user'
+  let role = profile?.role ?? 'user'
+  let disabledAt = profile?.disabled_at ?? null
+
+  if (profileErr && (profileErr.code === '42703' || profileErr.message?.includes('disabled_at'))) {
+    const { data: fallback } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', data.user.id)
+      .maybeSingle()
+    role = fallback?.role ?? 'user'
+    disabledAt = null
+  }
+
+  if (disabledAt) {
+    await supabase.auth.signOut()
+    return NextResponse.json(
+      {
+        error: 'Tài khoản đã bị vô hiệu hóa. Liên hệ quản trị viên.',
+        code: 'account_disabled',
+      },
+      { status: 403 }
+    )
+  }
 
   return NextResponse.json({
     ok: true,

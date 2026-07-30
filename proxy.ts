@@ -64,6 +64,29 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
+  // Soft-disabled accounts: sign out and block access mid-session
+  if (user && (isProtectedPage || isProtectedApi) && !isPublicAuthApi) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('disabled_at')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (profile?.disabled_at) {
+      await supabase.auth.signOut()
+      if (isProtectedApi) {
+        return NextResponse.json(
+          { error: 'Account disabled', code: 'account_disabled' },
+          { status: 403 }
+        )
+      }
+      const loginUrl = request.nextUrl.clone()
+      loginUrl.pathname = '/login'
+      loginUrl.searchParams.set('error', 'account_disabled')
+      return NextResponse.redirect(loginUrl)
+    }
+  }
+
   return supabaseResponse
 }
 

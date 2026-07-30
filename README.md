@@ -1,10 +1,10 @@
-# Second Brain — Personal Knowledge RAG SaaS
+# Note Everything — Personal Knowledge RAG SaaS (v2.1)
 
 Upload documents (PDF, DOCX, TXT) and chat with your knowledge base using Claude AI. Built for users accessing from China via CDN — all AI API calls happen server-side outside the GFW.
 
 ## Tech Stack
 
-- **Frontend/API**: Next.js 16 App Router, TypeScript, Tailwind CSS, shadcn/ui
+- **Frontend/API**: Next.js 16 App Router, TypeScript, Tailwind CSS, shadcn/ui, next-intl (vi/en)
 - **Chat AI**: Anthropic Claude (via Vercel AI SDK)
 - **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions)
 - **Vector DB**: Qdrant Cloud
@@ -38,6 +38,14 @@ cp .env.example .env.local
 Open your Supabase project → SQL Editor → run once:
 
 `supabase/migrations/001_schema_v2.sql`
+
+Then apply the 2.1 migration (soft-disable users):
+
+`supabase/migrations/002_profiles_disabled.sql`
+
+Then apply the 2.2 migration (document favorites):
+
+`supabase/migrations/003_documents_favorite.sql`
 
 Create the first admin user (set `ADMIN_PASSWORD` in `.env.local` first):
 

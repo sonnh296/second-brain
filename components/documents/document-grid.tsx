@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MoreVertical } from 'lucide-react'
+import { MoreVertical, Star } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TagBadge } from '@/components/documents/tag-manager'
@@ -16,7 +16,7 @@ const STATUS_LABELS: Record<DocStatus, string> = {
   failed: 'Lỗi',
 }
 
-function StatusBadge({ status }: { status: DocStatus }) {
+export function StatusBadge({ status }: { status: DocStatus }) {
   const variants: Record<DocStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     done: 'default',
     pending: 'secondary',
@@ -47,12 +47,40 @@ function ItemBusyOverlay({ label }: { label: string }) {
   )
 }
 
+function FavoriteButton({
+  favorited,
+  onToggle,
+}: {
+  favorited: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className="p-1 rounded hover:bg-muted cursor-pointer"
+      title={favorited ? 'Bỏ yêu thích' : 'Yêu thích'}
+      aria-label={favorited ? 'Bỏ yêu thích' : 'Yêu thích'}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+    >
+      <Star
+        className={`h-3.5 w-3.5 ${
+          favorited ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'
+        }`}
+      />
+    </button>
+  )
+}
+
 export function DriveGridItem({
   doc,
   selected,
   onOpen,
   onEdit,
   onDelete,
+  onToggleFavorite,
   fileIcon,
   busy,
   busyLabel = 'Đang xóa...',
@@ -62,6 +90,7 @@ export function DriveGridItem({
   onOpen: () => void
   onEdit?: () => void
   onDelete: () => void
+  onToggleFavorite?: () => void
   fileIcon: React.ReactNode
   busy?: boolean
   busyLabel?: string
@@ -75,6 +104,11 @@ export function DriveGridItem({
       onClick={busy ? undefined : onOpen}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
+      {onToggleFavorite && (
+        <div className="absolute top-2 left-2 z-10">
+          <FavoriteButton favorited={Boolean(doc.is_favorite)} onToggle={onToggleFavorite} />
+        </div>
+      )}
       <div className="flex flex-col items-center text-center gap-2">
         {fileIcon}
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{doc.filename}</p>
@@ -136,6 +170,7 @@ export function DriveListItem({
   onOpen,
   onEdit,
   onDelete,
+  onToggleFavorite,
   fileIcon,
   formatBytes,
   busy,
@@ -146,6 +181,7 @@ export function DriveListItem({
   onOpen: () => void
   onEdit?: () => void
   onDelete: () => void
+  onToggleFavorite?: () => void
   fileIcon: React.ReactNode
   formatBytes: (bytes: number) => string
   busy?: boolean
@@ -159,6 +195,9 @@ export function DriveListItem({
       onClick={busy ? undefined : onOpen}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
+      {onToggleFavorite && (
+        <FavoriteButton favorited={Boolean(doc.is_favorite)} onToggle={onToggleFavorite} />
+      )}
       {fileIcon}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{doc.filename}</p>
@@ -180,32 +219,32 @@ export function DriveListItem({
         {new Date(doc.created_at).toLocaleDateString('vi-VN')}
       </span>
       {doc.status !== 'done' && <StatusBadge status={doc.status} />}
-      {onEdit && (
+      <div className="flex items-center gap-1 shrink-0">
+        {onEdit && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit()
+            }}
+          >
+            Sửa
+          </Button>
+        )}
         <Button
-          variant="ghost"
           size="sm"
-          className="h-7 text-xs shrink-0"
+          variant="ghost"
+          className="h-7 text-xs text-destructive hover:text-destructive"
           onClick={(e) => {
             e.stopPropagation()
-            onEdit()
+            onDelete()
           }}
         >
-          Sửa
+          Xóa
         </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 text-xs text-destructive shrink-0"
-        onClick={(e) => {
-          e.stopPropagation()
-          onDelete()
-        }}
-      >
-        Xóa
-      </Button>
+      </div>
     </div>
   )
 }
-
-export { StatusBadge, STATUS_LABELS }

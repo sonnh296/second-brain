@@ -100,10 +100,12 @@ function ContentPreview({
   const fileType = preview?.file_type ?? doc.file_type
   const isMedia = isTranscribableType(fileType)
   const canEditText =
-    doc.file_type !== 'note' &&
     !isMedia &&
-    (preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
-    Boolean(preview?.content)
+    (doc.file_type === 'note' ||
+      ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
+        Boolean(preview?.content)))
+  const originalContent = preview?.content ?? ''
+  const hasContentChanges = editContent.trim() !== originalContent.trim()
 
   if (previewLoading) {
     return (
@@ -155,7 +157,12 @@ function ContentPreview({
                   rows={10}
                   className="min-h-56 resize-y text-sm leading-relaxed"
                 />
-                <Button size="sm" variant="outline" onClick={() => void onSaveContent()} disabled={savingContent}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void onSaveContent()}
+                  disabled={savingContent || !hasContentChanges}
+                >
                   {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
                 </Button>
               </div>
@@ -208,7 +215,12 @@ function ContentPreview({
                 rows={18}
                 className="min-h-[min(55vh,420px)] resize-y text-sm leading-relaxed"
               />
-              <Button size="sm" variant="outline" onClick={() => void onSaveContent()} disabled={savingContent}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void onSaveContent()}
+                disabled={savingContent || !hasContentChanges}
+              >
                 {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
               </Button>
             </div>

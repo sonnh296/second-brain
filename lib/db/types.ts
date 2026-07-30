@@ -35,6 +35,7 @@ export interface Document {
   ocr_text: string | null
   folder_id: string | null
   deleted_at: string | null
+  is_favorite?: boolean
   created_at: string
   tags?: Tag[]
 }

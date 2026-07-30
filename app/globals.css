@@ -151,15 +151,6 @@
   }
 }
 
-@keyframes guest-shimmer {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
-  }
-}
-
 @keyframes guest-brand-breathe {
   0%,
   100% {
@@ -523,19 +514,9 @@
 }
 
 .guest-title-shimmer {
-  background-image: linear-gradient(
-    90deg,
-    oklch(0.55 0 0) 0%,
-    oklch(0.35 0 0) 40%,
-    oklch(0.62 0 0) 50%,
-    oklch(0.35 0 0) 60%,
-    oklch(0.55 0 0) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: guest-shimmer 5.5s linear infinite;
+  /* Static emphasis — infinite gradient shimmer caused visible flicker
+     when combined with guest-rise opacity and background-clip:text */
+  color: oklch(0.45 0.01 260);
 }
 
 .guest-brand-mark {
@@ -568,7 +549,6 @@
   .guest-drift,
   .guest-swoosh,
   .guest-moon,
-  .guest-title-shimmer,
   .guest-brand-mark,
   .guest-card-glow {
     animation: none !important;
@@ -577,12 +557,5 @@
   .guest-rise {
     opacity: 1;
     animation: none !important;
-  }
-
-  .guest-title-shimmer {
-    color: oklch(0.45 0 0);
-    background: none;
-    -webkit-background-clip: unset;
-    background-clip: unset;
   }
 }

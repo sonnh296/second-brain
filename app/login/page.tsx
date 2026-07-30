@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { GuestShell } from '@/components/auth/guest-shell'
 import { PasswordInput } from '@/components/auth/password-input'
 import { GoogleAuthButton } from '@/components/auth/google-auth-button'
@@ -13,6 +14,8 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 
 function LoginForm() {
+  const t = useTranslations('auth')
+  const tc = useTranslations('common')
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -23,19 +26,21 @@ function LoginForm() {
 
   useEffect(() => {
     if (searchParams.get('confirmed') === '1') {
-      setInfo('Email đã được xác nhận. Bạn có thể đăng nhập.')
+      setInfo(t('emailConfirmed'))
     }
     const err = searchParams.get('error')
     if (err === 'invalid_or_expired') {
-      setError('Link xác nhận không hợp lệ hoặc đã hết hạn.')
+      setError(t('invalidLink'))
     } else if (err === 'oauth_denied' || err === 'oauth_failed') {
-      setError('Đăng nhập Google thất bại. Vui lòng thử lại.')
+      setError(t('oauthFailed'))
     } else if (err === 'oauth_unavailable') {
-      setError('Google OAuth chưa được cấu hình trên server.')
+      setError(t('oauthUnavailable'))
     } else if (err === 'confirm_failed') {
-      setError('Không xác nhận được email. Vui lòng thử lại.')
+      setError(t('confirmFailed'))
+    } else if (err === 'account_disabled') {
+      setError(t('accountDisabled'))
     }
-  }, [searchParams])
+  }, [searchParams, t])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -52,7 +57,7 @@ function LoginForm() {
     const data = await res.json().catch(() => ({}))
 
     if (!res.ok) {
-      setError(data.error ?? 'Đăng nhập thất bại')
+      setError(data.error ?? t('loginFailed'))
       setLoading(false)
       return
     }
@@ -69,18 +74,18 @@ function LoginForm() {
     <div className="guest-card relative overflow-hidden rounded-2xl border border-border/80 bg-background/80 backdrop-blur-md shadow-[0_12px_48px_-16px_rgba(15,23,42,0.18)] p-6 sm:p-7">
       <div className="guest-card-glow pointer-events-none absolute -top-16 right-[-20%] h-40 w-40 rounded-full bg-slate-300/30 blur-3xl" />
       <div className="relative mb-6">
-        <h2 className="text-lg font-semibold tracking-tight">Đăng nhập</h2>
+        <h2 className="text-lg font-semibold tracking-tight">{t('login')}</h2>
       </div>
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="identifier" className="text-xs">
-            Tên đăng nhập hoặc email
+            {t('identifier')}
           </Label>
           <Input
             id="identifier"
             type="text"
-            placeholder="username hoặc you@email.com"
+            placeholder={t('identifierPlaceholder')}
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             autoComplete="username"
@@ -90,7 +95,7 @@ function LoginForm() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="password" className="text-xs">
-            Mật khẩu
+            {t('password')}
           </Label>
           <PasswordInput
             id="password"
@@ -103,7 +108,7 @@ function LoginForm() {
         {info && <p className="text-sm text-emerald-600">{info}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full h-10" disabled={loading}>
-          {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          {loading ? t('loggingIn') : t('login')}
         </Button>
       </form>
 
@@ -112,19 +117,19 @@ function LoginForm() {
           <span className="w-full border-t border-border/70" />
         </div>
         <div className="relative flex justify-center text-xs">
-          <span className="bg-background/80 px-2 text-muted-foreground">hoặc</span>
+          <span className="bg-background/80 px-2 text-muted-foreground">{tc('or')}</span>
         </div>
       </div>
 
-      <GoogleAuthButton>Tiếp tục với Google</GoogleAuthButton>
+      <GoogleAuthButton>{t('continueGoogle')}</GoogleAuthButton>
 
       <p className="mt-5 text-center text-sm text-muted-foreground">
-        Chưa có tài khoản?{' '}
+        {t('noAccount')}{' '}
         <Link
           href="/signup"
           className="font-medium text-foreground underline-offset-4 hover:underline"
         >
-          Đăng ký
+          {t('signup')}
         </Link>
       </p>
     </div>
@@ -132,9 +137,10 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const tc = useTranslations('common')
   return (
     <GuestShell>
-      <Suspense fallback={<div className="text-sm text-muted-foreground">Đang tải…</div>}>
+      <Suspense fallback={<div className="text-sm text-muted-foreground">{tc('loading')}</div>}>
         <LoginForm />
       </Suspense>
     </GuestShell>

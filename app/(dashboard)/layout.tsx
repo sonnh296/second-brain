@@ -2,7 +2,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { redirect } from 'next/navigation'
+import { isAdmin } from '@/lib/auth/admin'
 import { HeaderActions } from '@/components/dashboard/header-actions'
+import { DashboardNav } from '@/components/dashboard/dashboard-nav'
 
 export default async function DashboardLayout({
   children,
@@ -17,6 +19,8 @@ export default async function DashboardLayout({
   if (!user) {
     redirect('/login')
   }
+
+  const admin = await isAdmin(supabase, user.id)
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -34,14 +38,7 @@ export default async function DashboardLayout({
               Note Everything
             </span>
           </Link>
-          <nav className="flex gap-3 sm:gap-4 text-sm">
-            <Link href="/documents" className="text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
-              Kho dữ liệu
-            </Link>
-            <Link href="/chat" className="text-muted-foreground hover:text-foreground transition-colors">
-              Chat
-            </Link>
-          </nav>
+          <DashboardNav isAdmin={admin} />
         </div>
         <HeaderActions />
       </header>
