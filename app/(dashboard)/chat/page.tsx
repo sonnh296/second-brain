@@ -94,7 +94,12 @@ export default function ChatPage() {
     },
     onError: (err) => {
       console.error('[chat] Error:', err)
-      setChatError(err.message || 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.')
+      const msg = err.message || ''
+      if (/overloaded|quá tải/i.test(msg)) {
+        setChatError(msg)
+      } else {
+        setChatError(msg || 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.')
+      }
     },
     onFinish: async () => {
       const session = activeSessionRef.current
@@ -124,6 +129,10 @@ export default function ChatPage() {
         message?: string
         pending_action?: PendingChatAction
         cited_sources?: CitedSource[]
+        model_fallback?: { message?: string }
+      }
+      if (item.model_fallback?.message) {
+        setActionNotice(item.model_fallback.message)
       }
       if (item.no_context && item.message) {
         setNoContextNotice(item.message)

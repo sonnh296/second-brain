@@ -27,7 +27,11 @@ import {
 import { isDefaultSessionTitle, generateSessionTitle } from '@/lib/ai/session-title'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
-import { DEFAULT_CHAT_MODEL, isValidChatModel } from '@/lib/ai/models'
+import {
+  formatChatStreamError,
+  resolveChatModelWithFallback,
+} from '@/lib/ai/chat-errors'
+import { DEFAULT_CHAT_MODEL, isValidChatModel, type ChatModelId } from '@/lib/ai/models'
 import { persistChatImages, buildMultimodalHistory } from '@/lib/chat/attachments'
 import { buildNoteTools, NOTE_TOOLS_PROMPT } from '@/lib/chat/note-tools'
 import { fromAiSdkSteps, logUsage } from '@/lib/usage/log'
@@ -103,12 +107,14 @@ export async function POST(req: NextRequest) {
   }
   const { session_id, mode, images } = parsed.data
   const message = extractUserMessage(parsed.data)
-  const modelId =
+  const requestedModel: ChatModelId =
     parsed.data.model && isValidChatModel(parsed.data.model)
       ? parsed.data.model
       : process.env.CLAUDE_MODEL && isValidChatModel(process.env.CLAUDE_MODEL)
         ? process.env.CLAUDE_MODEL
         : DEFAULT_CHAT_MODEL
+
+  const { modelId, fallbackNotice } = await resolveChatModelWithFallback(requestedModel)
 
   const { data: session } = await supabase
     .from('chat_sessions')
@@ -262,6 +268,15 @@ export async function POST(req: NextRequest) {
           : buildGeneralPrompt()
 
   const streamData = new StreamData()
+  if (fallbackNotice) {
+    streamData.append({ model_fallback: { message: fallbackNotice } })
+    logger.info('Chat model fallback applied', {
+      userId,
+      sessionId: session_id,
+      requestedModel,
+      activeModel: modelId,
+    })
+  }
   if (noContext && !conversational && !documentManagement) {
     streamData.append({
       no_context: true,
@@ -442,16 +457,14 @@ export async function POST(req: NextRequest) {
   return result.toDataStreamResponse({
     data: streamData,
     getErrorMessage: (error) => {
-      logger.error('Chat stream error', { err: error, userId, sessionId: session_id })
-      if (error instanceof Error && error.message) {
-        // Avoid leaking internal stack; keep a short actionable message
-        const msg = error.message
-        if (/uuid|invalid|schema|tool/i.test(msg)) {
-          return 'Không xử lý được thao tác trên ghi chú/tài liệu. Thử mô tả rõ tên note và nội dung cần sửa.'
-        }
-        return msg.length > 200 ? 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.' : msg
-      }
-      return 'Đã xảy ra lỗi khi chat. Vui lòng thử lại.'
+      logger.error('Chat stream error', {
+        err: error,
+        userId,
+        sessionId: session_id,
+        requestedModel,
+        activeModel: modelId,
+      })
+      return formatChatStreamError(error, requestedModel)
     },
   })
 }

@@ -14,7 +14,22 @@ interface LogContext {
 function serializeError(err: unknown): Record<string, unknown> | undefined {
   if (err == null) return undefined
   if (err instanceof Error) {
-    return { name: err.name, message: err.message, stack: err.stack }
+    const extra: Record<string, unknown> = {}
+    for (const key of ['type', 'statusCode', 'url', 'code', 'cause'] as const) {
+      const value = (err as Error & Record<string, unknown>)[key]
+      if (value !== undefined) extra[key] = value
+    }
+    if (typeof err.cause === 'object' && err.cause !== null) {
+      extra.cause = serializeError(err.cause)
+    }
+    return { name: err.name, message: err.message, stack: err.stack, ...extra }
+  }
+  if (typeof err === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(err)) as Record<string, unknown>
+    } catch {
+      return { message: String(err) }
+    }
   }
   return { message: String(err) }
 }
