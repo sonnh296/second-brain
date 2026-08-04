@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient } from '../db/server'
 import { enqueueIngestionJob } from '../queue'
+import { headObject } from '../storage'
 import { isTranscribableType } from '../upload/file-types'
 import { logger } from '../logger'
 
@@ -9,6 +10,9 @@ const RECOVERY_BATCH_LIMIT = 50
 /**
  * Re-queue media that never finished transcription (e.g. /api/upload/complete
  * missed after a long direct-to-R2 upload). Safe to run periodically.
+ *
+ * Skips docs whose R2 object is missing (abandoned / failed browser PUT) so
+ * we do not mark them failed with a cryptic NoSuchKey from the worker.
  */
 export async function recoverStuckMediaTranscription(): Promise<number> {
   const supabase = createServiceSupabaseClient()
@@ -62,6 +66,34 @@ export async function recoverStuckMediaTranscription(): Promise<number> {
 
     if (!pendingTooLong && !doneWithoutSubtitles) continue
 
+    const head = await headObject(doc.r2_key)
+    if (!head) {
+      // Upload never landed in R2 (or object was deleted). Mark failed with a
+      // clear message instead of letting the worker throw NoSuchKey.
+      if (pendingTooLong) {
+        await supabase
+          .from('documents')
+          .update({
+            status: 'failed',
+            error_message:
+              'File chưa lên được kho lưu trữ. Hãy tải lên lại (kiểm tra mạng / CORS).',
+          })
+          .eq('id', doc.id)
+        logger.warn('recoverStuckMedia: pending media missing on R2', {
+          documentId: doc.id,
+          filename: doc.filename,
+          r2Key: doc.r2_key,
+        })
+      } else {
+        logger.warn('recoverStuckMedia: skip done-without-subtitles, R2 missing', {
+          documentId: doc.id,
+          filename: doc.filename,
+          r2Key: doc.r2_key,
+        })
+      }
+      continue
+    }
+
     try {
       await supabase
         .from('documents')
@@ -90,6 +122,7 @@ export async function recoverStuckMediaTranscription(): Promise<number> {
         filename: doc.filename,
         previousStatus: doc.status,
         reason: pendingTooLong ? 'pending_timeout' : 'done_without_subtitles',
+        fileSizeBytes: head.size,
       })
     } catch (err) {
       logger.error('recoverStuckMedia: failed to requeue', {

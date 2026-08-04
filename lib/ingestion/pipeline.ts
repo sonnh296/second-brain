@@ -325,7 +325,17 @@ export async function runIngestionPipeline(
       }
       rawText = doc.note_content
     } else {
-      await downloadToFile(r2Key, tempPath!)
+      try {
+        await downloadToFile(r2Key, tempPath!)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (/specified key does not exist|NoSuchKey|NotFound/i.test(msg)) {
+          throw new Error(
+            'File không còn trên kho lưu trữ (R2). Có thể upload bị gián đoạn — hãy tải lên lại.'
+          )
+        }
+        throw err
+      }
       if (canOcr) {
         rawText = await extractTextFromImage(tempPath!)
         logger.info('Image OCR text extracted for indexing', {
