@@ -116,7 +116,17 @@
     "statAllTime": "累计：{count}",
     "statDocsHint": "{count} 个文档 · {attachments} 聊天附件",
     "statUsersHint": "{active} 正常 · {disabled} 已停用",
-    "costNote": "按公开 API 价格估算（Anthropic/OpenAI），非正式账单。"
+    "costNote": "按公开 API 价格估算（Anthropic/OpenAI），非正式账单。",
+    "failedDocsTitle": "失败文档",
+    "failedDocsEmpty": "暂无失败文档。",
+    "failedDocsHint": "最多显示最近 100 条失败记录（{shown}/{total}）。",
+    "colFilename": "文件名",
+    "colFileType": "类型",
+    "colOwner": "所有者",
+    "colError": "错误",
+    "colFailedAt": "失败时间",
+    "failedStatus": "失败",
+    "refreshFailedDocs": "刷新失败列表"
   },
   "profile": {
     "title": "个人",

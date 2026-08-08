@@ -116,7 +116,17 @@
     "statAllTime": "Tất cả: {count}",
     "statDocsHint": "{count} tài liệu · {attachments} đính kèm chat",
     "statUsersHint": "{active} active · {disabled} disabled",
-    "costNote": "Ước tính theo giá công bố API (Anthropic/OpenAI), không phải hóa đơn."
+    "costNote": "Ước tính theo giá công bố API (Anthropic/OpenAI), không phải hóa đơn.",
+    "failedDocsTitle": "Tài liệu lỗi",
+    "failedDocsEmpty": "Không có tài liệu lỗi.",
+    "failedDocsHint": "Hiển thị tối đa 100 lỗi gần nhất ({shown}/{total}).",
+    "colFilename": "Tên file",
+    "colFileType": "Loại",
+    "colOwner": "Chủ sở hữu",
+    "colError": "Lỗi",
+    "colFailedAt": "Thời gian",
+    "failedStatus": "Lỗi",
+    "refreshFailedDocs": "Làm mới lỗi"
   },
   "profile": {
     "title": "Cá nhân",

@@ -116,7 +116,17 @@
     "statAllTime": "All time: {count}",
     "statDocsHint": "{count} documents · {attachments} chat attachments",
     "statUsersHint": "{active} active · {disabled} disabled",
-    "costNote": "Estimate from published API rates (Anthropic/OpenAI), not an invoice."
+    "costNote": "Estimate from published API rates (Anthropic/OpenAI), not an invoice.",
+    "failedDocsTitle": "Failed documents",
+    "failedDocsEmpty": "No failed documents.",
+    "failedDocsHint": "Showing up to 100 most recent failures ({shown} of {total}).",
+    "colFilename": "Filename",
+    "colFileType": "Type",
+    "colOwner": "Owner",
+    "colError": "Error",
+    "colFailedAt": "Failed at",
+    "failedStatus": "Failed",
+    "refreshFailedDocs": "Refresh failures"
   },
   "profile": {
     "title": "Profile",

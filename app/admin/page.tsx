@@ -14,6 +14,10 @@ import { formatBytes, formatTokenCount } from '@/lib/usage/format'
 import { formatUsd } from '@/lib/usage/pricing'
 import { dateLocaleTag } from '@/i18n/config'
 import type { AdminSystemStats } from '@/lib/usage/admin-stats'
+import type {
+  AdminFailedDocument,
+  AdminFailedDocumentsResult,
+} from '@/lib/usage/admin-failed-documents'
 
 interface AdminUser {
   id: string
@@ -32,8 +36,11 @@ export default function AdminPage() {
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [stats, setStats] = useState<AdminSystemStats | null>(null)
+  const [failedDocs, setFailedDocs] = useState<AdminFailedDocument[]>([])
+  const [failedTotal, setFailedTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(true)
+  const [failedLoading, setFailedLoading] = useState(true)
 
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<UserFormMode>('create')
@@ -63,10 +70,27 @@ export default function AdminPage() {
     setStatsLoading(false)
   }, [])
 
+  const fetchFailedDocs = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setFailedLoading(true)
+    const res = await fetch('/api/admin/documents/failed')
+    if (res.ok) {
+      const data = (await res.json()) as AdminFailedDocumentsResult
+      setFailedDocs(data.items)
+      setFailedTotal(data.total)
+    }
+    if (!opts?.silent) setFailedLoading(false)
+  }, [])
+
   useEffect(() => {
     void fetchUsers()
     void fetchStats()
-  }, [fetchUsers, fetchStats])
+    void fetchFailedDocs()
+  }, [fetchUsers, fetchStats, fetchFailedDocs])
+
+  useEffect(() => {
+    const id = setInterval(() => void fetchFailedDocs({ silent: true }), 60_000)
+    return () => clearInterval(id)
+  }, [fetchFailedDocs])
 
   function openCreate() {
     setFormMode('create')
@@ -227,6 +251,76 @@ export default function AdminPage() {
       </div>
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle className="text-base">{t('failedDocsTitle')}</CardTitle>
+            {!failedLoading && failedTotal > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('failedDocsHint', {
+                  shown: failedDocs.length,
+                  total: failedTotal,
+                })}
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={failedLoading}
+            onClick={() => void fetchFailedDocs()}
+          >
+            {t('refreshFailedDocs')}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {failedLoading ? (
+            <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+          ) : failedDocs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('failedDocsEmpty')}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">{t('colFilename')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colFileType')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colOwner')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colStatus')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colError')}</th>
+                    <th className="pb-2 font-medium">{t('colFailedAt')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {failedDocs.map((doc) => (
+                    <tr key={doc.id} className="border-b last:border-0">
+                      <td className="py-2.5 pr-4 font-medium max-w-48 truncate" title={doc.filename}>
+                        {doc.filename}
+                      </td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">{doc.file_type}</td>
+                      <td className="py-2.5 pr-4">{doc.username}</td>
+                      <td className="py-2.5 pr-4">
+                        <Badge variant="destructive">{t('failedStatus')}</Badge>
+                      </td>
+                      <td
+                        className="py-2.5 pr-4 max-w-80 truncate text-muted-foreground"
+                        title={doc.error_message ?? undefined}
+                      >
+                        {doc.error_message || '—'}
+                      </td>
+                      <td className="py-2.5 text-muted-foreground whitespace-nowrap">
+                        {new Date(doc.created_at).toLocaleString(dateLocale)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
