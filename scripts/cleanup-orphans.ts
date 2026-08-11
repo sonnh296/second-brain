@@ -26,12 +26,19 @@ function isStoredFileKey(r2Key: string): boolean {
   return r2Key !== 'pending' && r2Key !== 'note' && !r2Key.startsWith('notes/')
 }
 
+function isActiveReplacement(startedAt: string | null): boolean {
+  if (!startedAt) return false
+  return Date.now() - new Date(startedAt).getTime() < 24 * 60 * 60 * 1000
+}
+
 async function main() {
   const supabase = createServiceSupabaseClient()
 
   let docQuery = supabase
     .from('documents')
-    .select('id, user_id, r2_key, filename, status, chunk_count')
+    .select(
+      'id, user_id, r2_key, replacement_r2_key, replacement_started_at, filename, status, chunk_count'
+    )
   if (userFilter) docQuery = docQuery.eq('user_id', userFilter)
 
   const { data: documents, error: docErr } = await docQuery
@@ -43,7 +50,14 @@ async function main() {
   const docs = documents ?? []
   const docIds = new Set(docs.map((d) => d.id))
   const validR2Keys = new Set(
-    docs.map((d) => d.r2_key).filter((key) => isStoredFileKey(key))
+    docs
+      .flatMap((d) => [
+        d.r2_key,
+        isActiveReplacement(d.replacement_started_at)
+          ? d.replacement_r2_key
+          : null,
+      ])
+      .filter((key): key is string => Boolean(key) && isStoredFileKey(key))
   )
 
   const qdrantRefs = await scrollDocumentReferences()

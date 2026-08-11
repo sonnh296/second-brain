@@ -5,7 +5,7 @@ import { createHash } from 'crypto'
 import { v5 as uuidv5 } from 'uuid'
 import { isIndexableType, isTranscribableType } from '../upload/file-types'
 import { parseFileWithPages, type PageOffset } from './parse'
-import { chunkText } from './chunk'
+import { chunkText, textForEmbedding } from './chunk'
 import { embedBatch } from './embed'
 import { extractTextFromImage, isOcrEligibleType, isOcrEnabled } from './ocr'
 import { transcribeMediaFile, isTranscriptionEnabled } from './transcribe'
@@ -195,10 +195,12 @@ async function indexExtractedText(
   let processedCount = 0
   for (let i = 0; i < chunks.length; i += INGESTION_BATCH_SIZE) {
     const batch = chunks.slice(i, i + INGESTION_BATCH_SIZE)
-    const vectors = await embedBatch(
-      batch.map((c) => c.text),
-      { userId, purpose: 'embedding_ingest', documentId }
-    )
+    const indexedTexts = batch.map((c) => textForEmbedding(displayFilename, c.text))
+    const vectors = await embedBatch(indexedTexts, {
+      userId,
+      purpose: 'embedding_ingest',
+      documentId,
+    })
 
     const pageOf = (chunk: (typeof batch)[0]) =>
       pageOffsets?.length ? pageForOffset(pageOffsets, chunk.start) : undefined
@@ -212,16 +214,16 @@ async function indexExtractedText(
           document_id: documentId,
           filename: displayFilename,
           chunk_index: chunk.index,
-          chunk_text: chunk.text,
+          chunk_text: indexedTexts[j],
           ...(pageOf(chunk) !== undefined ? { page: pageOf(chunk) } : {}),
         },
       }))
     )
 
-    const chunkRows = batch.map((chunk) => ({
+    const chunkRows = batch.map((chunk, j) => ({
       document_id: documentId,
       user_id: userId,
-      chunk_text: chunk.text,
+      chunk_text: indexedTexts[j],
       chunk_index: chunk.index,
       qdrant_point_id: makePointId(documentId, chunk.index),
       page: pageOf(chunk) ?? null,

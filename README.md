@@ -1,4 +1,4 @@
-# Note Everything — Personal Knowledge RAG SaaS (v2.1)
+# Note Everything — Personal Knowledge RAG SaaS (v2.3)
 
 Upload documents (PDF, DOCX, TXT) and chat with your knowledge base using Claude AI. Built for users accessing from China via CDN — all AI API calls happen server-side outside the GFW.
 
@@ -46,6 +46,10 @@ Then apply the 2.1 migration (soft-disable users):
 Then apply the 2.2 migration (document favorites):
 
 `supabase/migrations/003_documents_favorite.sql`
+
+Then apply the 2.3 migration (document replacement uploads):
+
+`supabase/migrations/004_document_replacement.sql`
 
 Create the first admin user (set `ADMIN_PASSWORD` in `.env.local` first):
 

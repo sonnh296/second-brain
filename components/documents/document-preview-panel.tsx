@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Download, ExternalLink, Pencil, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useTranslations } from 'next-intl'
+import { Download, ExternalLink, Pencil, Upload, X } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -66,6 +67,8 @@ interface DocumentPreviewPanelProps {
   onSaveFolder: () => void
   onReprocessOcr?: () => void
   reprocessingOcr?: boolean
+  onReupload?: () => void
+  reuploading?: boolean
   onEditNote?: () => void
   onDelete: () => void
   deleting?: boolean
@@ -85,6 +88,7 @@ function ContentPreview({
   previewLoading,
   editContent,
   savingContent,
+  isActive,
   onEditContent,
   onSaveContent,
 }: {
@@ -93,9 +97,15 @@ function ContentPreview({
   previewLoading: boolean
   editContent: string
   savingContent: boolean
+  isActive: boolean
   onEditContent: (v: string) => void
   onSaveContent: () => void | Promise<void>
 }) {
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null)
+
+  useEffect(() => {
+    if (!isActive) mediaRef.current?.pause()
+  }, [isActive])
   const viewerUrl = preview?.viewer_url ?? preview?.image_url ?? `/api/documents/${doc.id}/download`
   const fileType = preview?.file_type ?? doc.file_type
   const isMedia = isTranscribableType(fileType)
@@ -184,6 +194,7 @@ function ContentPreview({
       <PreviewBody>
         <div className="flex-1 min-h-0 flex items-center justify-center p-4">
           <video
+            ref={mediaRef as React.RefObject<HTMLVideoElement>}
             src={viewerUrl}
             controls
             className="w-full max-h-full rounded border bg-black"
@@ -197,7 +208,12 @@ function ContentPreview({
     return (
       <PreviewBody>
         <div className="p-6 flex items-center justify-center">
-          <audio src={viewerUrl} controls className="w-full" />
+          <audio
+            ref={mediaRef as React.RefObject<HTMLAudioElement>}
+            src={viewerUrl}
+            controls
+            className="w-full"
+          />
         </div>
       </PreviewBody>
     )
@@ -376,10 +392,13 @@ export function DocumentPreviewPanel({
   onSaveFolder,
   onReprocessOcr,
   reprocessingOcr,
+  onReupload,
+  reuploading,
   onEditNote,
   onDelete,
   deleting = false,
 }: DocumentPreviewPanelProps) {
+  const t = useTranslations('documents')
   const [tab, setTab] = useState<PanelTab>('content')
   const [editingName, setEditingName] = useState(false)
   const viewerUrl = `/api/documents/${doc.id}/download`
@@ -489,14 +508,20 @@ export function DocumentPreviewPanel({
         </div>
       )}
 
-      {tab === 'content' ? (
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div
+          className={cn(
+            'flex-1 min-h-0 flex flex-col overflow-hidden',
+            tab !== 'content' && 'hidden'
+          )}
+        >
           <ContentPreview
             doc={doc}
             preview={preview}
             previewLoading={previewLoading}
             editContent={editContent}
             savingContent={savingContent}
+            isActive={tab === 'content'}
             onEditContent={onEditContent}
             onSaveContent={onSaveContent}
           />
@@ -530,19 +555,28 @@ export function DocumentPreviewPanel({
             </div>
           )}
         </div>
-      ) : tab === 'subtitles' ? (
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <SubtitlesPanel preview={preview} previewLoading={previewLoading} status={doc.status} />
+
+        {isMedia && (
+          <div
+            className={cn(
+              'flex-1 min-h-0 flex flex-col overflow-hidden',
+              tab !== 'subtitles' && 'hidden'
+            )}
+          >
+            <SubtitlesPanel preview={preview} previewLoading={previewLoading} status={doc.status} />
+          </div>
+        )}
+
+        <div className={cn('flex-1 min-h-0 flex flex-col overflow-hidden', tab !== 'description' && 'hidden')}>
+          <DescriptionPanel
+            editDescription={editDescription}
+            savingDescription={savingDescription}
+            onEditDescription={onEditDescription}
+            onSaveDescription={onSaveDescription}
+          />
         </div>
-      ) : tab === 'description' ? (
-        <DescriptionPanel
-          editDescription={editDescription}
-          savingDescription={savingDescription}
-          onEditDescription={onEditDescription}
-          onSaveDescription={onSaveDescription}
-        />
-      ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto">
+
+        <div className={cn('flex-1 min-h-0 overflow-y-auto', tab !== 'details' && 'hidden')}>
           <div className="p-4 space-y-3">
             <div className="flex justify-center py-2">{fileIcon}</div>
 
@@ -588,6 +622,17 @@ export function DocumentPreviewPanel({
             </div>
 
             <div className="flex flex-col gap-2 pt-2">
+              {onReupload && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onReupload}
+                  disabled={reuploading}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {reuploading ? t('reuploading') : t('reuploadFile')}
+                </Button>
+              )}
               {onReprocessOcr && (
                 <Button
                   variant="outline"
@@ -609,7 +654,7 @@ export function DocumentPreviewPanel({
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

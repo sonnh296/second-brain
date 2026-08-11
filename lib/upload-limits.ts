@@ -19,6 +19,17 @@ export type QuotaError =
   | { code: 'file_size'; message: string }
   | { code: 'storage'; message: string }
 
+export function canReplaceWithinStorageLimit(
+  usedBytes: number,
+  currentFileBytes: number,
+  replacementBytes: number
+): boolean {
+  return (
+    Math.max(0, usedBytes - currentFileBytes) + replacementBytes <=
+    MAX_STORAGE_BYTES_PER_USER
+  )
+}
+
 export async function checkDocumentQuota(
   supabase: SupabaseClient,
   userId: string,

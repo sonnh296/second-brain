@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
 
 const CreateFolderSchema = z.object({
-  name: z.string().min(1).max(100).trim(),
+  name: z.string().trim().min(1).max(100),
   parent_id: z.string().uuid().nullable().optional(),
   color: z
     .string()

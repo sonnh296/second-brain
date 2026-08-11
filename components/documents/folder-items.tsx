@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Folder, MoreVertical } from 'lucide-react'
+import { useTranslations } from 'next-intl'
+import { Folder, MoreVertical, Pencil } from 'lucide-react'
 import type { Folder as FolderType } from '@/lib/db/types'
 
 function FolderBusyOverlay({ label }: { label: string }) {
@@ -24,17 +25,20 @@ function FolderBusyOverlay({ label }: { label: string }) {
 export function FolderGridItem({
   folder,
   onOpen,
+  onRename,
   onDelete,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
   folder: FolderType
   onOpen: () => void
+  onRename: () => void
   onDelete: () => void
   busy?: boolean
   busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const t = useTranslations('documents')
 
   return (
     <div
@@ -65,8 +69,22 @@ export function FolderGridItem({
         >
           <button
             type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted cursor-pointer"
+            onClick={() => {
+              setMenuOpen(false)
+              onRename()
+            }}
+          >
+            <Pencil className="h-3 w-3" />
+            {t('renameFolder')}
+          </button>
+          <button
+            type="button"
             className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer"
-            onClick={onDelete}
+            onClick={() => {
+              setMenuOpen(false)
+              onDelete()
+            }}
           >
             Xóa
           </button>
@@ -79,16 +97,20 @@ export function FolderGridItem({
 export function FolderListItem({
   folder,
   onOpen,
+  onRename,
   onDelete,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
   folder: FolderType
   onOpen: () => void
+  onRename: () => void
   onDelete: () => void
   busy?: boolean
   busyLabel?: string
 }) {
+  const t = useTranslations('documents')
+
   return (
     <div
       className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card ${
@@ -99,6 +121,16 @@ export function FolderListItem({
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
       <p className="text-sm font-medium truncate flex-1">{folder.name}</p>
+      <button
+        type="button"
+        className="text-xs hover:underline shrink-0 cursor-pointer"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRename()
+        }}
+      >
+        {t('renameFolder')}
+      </button>
       <button
         type="button"
         className="text-xs text-destructive hover:underline shrink-0 cursor-pointer"

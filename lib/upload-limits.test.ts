@@ -4,6 +4,7 @@ import {
   MAX_STORAGE_BYTES_PER_USER,
   sanitizeFilename,
   quotaStatusCode,
+  canReplaceWithinStorageLimit,
 } from './upload-limits'
 
 describe('sanitizeFilename', () => {
@@ -33,5 +34,15 @@ describe('limits constants', () => {
   it('has sensible defaults', () => {
     expect(MAX_FILE_SIZE_BYTES).toBeGreaterThan(0)
     expect(MAX_STORAGE_BYTES_PER_USER).toBeGreaterThan(MAX_FILE_SIZE_BYTES)
+  })
+})
+
+describe('canReplaceWithinStorageLimit', () => {
+  it('subtracts the current file before applying replacement size', () => {
+    const current = 100
+    const used = MAX_STORAGE_BYTES_PER_USER - 50
+
+    expect(canReplaceWithinStorageLimit(used, current, 140)).toBe(true)
+    expect(canReplaceWithinStorageLimit(used, current, 151)).toBe(false)
   })
 })

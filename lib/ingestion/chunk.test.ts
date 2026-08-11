@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chunkText } from './chunk'
+import { chunkText, textForEmbedding } from './chunk'
 
 describe('chunkText', () => {
   it('returns empty for blank input', () => {
@@ -26,5 +26,17 @@ describe('chunkText', () => {
     const text = `${para1}\n\n${para2}`
     const chunks = chunkText(text)
     expect(chunks.length).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('textForEmbedding', () => {
+  it('prefixes the filename', () => {
+    expect(textForEmbedding('att-vcx (2).docx', 'Nội dung')).toBe(
+      'Tên file: att-vcx (2).docx\n\nNội dung'
+    )
+  })
+
+  it('skips empty filenames', () => {
+    expect(textForEmbedding('  ', 'Nội dung')).toBe('Nội dung')
   })
 })

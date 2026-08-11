@@ -61,13 +61,13 @@ export default function AdminPage() {
     setLoading(false)
   }, [])
 
-  const fetchStats = useCallback(async () => {
-    setStatsLoading(true)
+  const fetchStats = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setStatsLoading(true)
     const res = await fetch('/api/admin/stats')
     if (res.ok) {
       setStats(await res.json())
     }
-    setStatsLoading(false)
+    if (!opts?.silent) setStatsLoading(false)
   }, [])
 
   const fetchFailedDocs = useCallback(async (opts?: { silent?: boolean }) => {
@@ -88,9 +88,12 @@ export default function AdminPage() {
   }, [fetchUsers, fetchStats, fetchFailedDocs])
 
   useEffect(() => {
-    const id = setInterval(() => void fetchFailedDocs({ silent: true }), 60_000)
+    const id = setInterval(() => {
+      void fetchStats({ silent: true })
+      void fetchFailedDocs({ silent: true })
+    }, 60_000)
     return () => clearInterval(id)
-  }, [fetchFailedDocs])
+  }, [fetchStats, fetchFailedDocs])
 
   function openCreate() {
     setFormMode('create')
@@ -197,6 +200,17 @@ export default function AdminPage() {
         </div>
         <div className="flex items-center gap-3">
           <LanguageSwitcher />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              void fetchStats()
+              void fetchFailedDocs()
+            }}
+            disabled={statsLoading || failedLoading}
+          >
+            {t('refreshStats')}
+          </Button>
           <Button type="button" onClick={openCreate}>
             {t('addUser')}
           </Button>
@@ -233,7 +247,7 @@ export default function AdminPage() {
           title={t('statCost')}
           loading={statsLoading}
           value={stats ? formatUsd(stats.cost.mtd_usd) : '—'}
-          hint={t('costNote')}
+          hint={stats?.cost.note ?? t('costNote')}
         />
         <StatCard
           title={t('statForecast')}
@@ -247,6 +261,27 @@ export default function AdminPage() {
                 })
               : undefined
           }
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard
+          title={t('statOpenAiCost')}
+          loading={statsLoading}
+          value={stats ? formatUsd(stats.cost.openai_usd) : '—'}
+          hint={providerHint(stats?.cost.providers.openai.status, t)}
+        />
+        <StatCard
+          title={t('statAnthropicCost')}
+          loading={statsLoading}
+          value={stats ? formatUsd(stats.cost.anthropic_usd) : '—'}
+          hint={providerHint(stats?.cost.providers.anthropic.status, t)}
+        />
+        <StatCard
+          title={t('statEstimatedCost')}
+          loading={statsLoading}
+          value={stats ? formatUsd(stats.cost.estimated_usd) : '—'}
+          hint={t('estimatedCostHint')}
         />
       </div>
 
@@ -465,6 +500,22 @@ export default function AdminPage() {
       </Dialog>
     </div>
   )
+}
+
+function providerHint(
+  status: 'ok' | 'missing_key' | 'error' | 'skipped' | undefined,
+  t: (key: string) => string
+): string {
+  switch (status) {
+    case 'ok':
+      return t('providerStatusOk')
+    case 'missing_key':
+      return t('providerStatusMissingKey')
+    case 'error':
+      return t('providerStatusError')
+    default:
+      return t('providerStatusEstimate')
+  }
 }
 
 function StatCard({

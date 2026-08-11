@@ -31,5 +31,6 @@ describe('query-intent', () => {
 
   it('extracts keywords', () => {
     expect(extractSearchKeywords('tôi có tài liệu ielts nào không')).toContain('ielts')
+    expect(extractSearchKeywords('雷赛 PLC')).toEqual(expect.arrayContaining(['雷赛', 'plc']))
   })
 })

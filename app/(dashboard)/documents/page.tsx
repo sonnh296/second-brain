@@ -125,6 +125,7 @@ export default function DocumentsPage() {
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [uploadDescription, setUploadDescription] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [reuploadDoc, setReuploadDoc] = useState<Document | null>(null);
   const [tags, setTags] = useState<TagType[]>([]);
   const [tagFilter, setTagFilter] = useState<string | "all">("all");
   const [showTagManager, setShowTagManager] = useState(false);
@@ -151,6 +152,10 @@ export default function DocumentsPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderError, setRenameFolderError] = useState("");
+  const [savingFolderName, setSavingFolderName] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [savingFolder, setSavingFolder] = useState(false);
   const [reprocessingOcr, setReprocessingOcr] = useState(false);
@@ -330,6 +335,41 @@ export default function DocumentsPage() {
     }
   }
 
+  function openRenameFolder(folder: Folder) {
+    setRenamingFolder(folder);
+    setRenameFolderName(folder.name);
+    setRenameFolderError("");
+  }
+
+  function closeRenameFolder() {
+    if (savingFolderName) return;
+    setRenamingFolder(null);
+    setRenameFolderName("");
+    setRenameFolderError("");
+  }
+
+  async function renameFolder() {
+    if (!renamingFolder || !renameFolderName.trim()) return;
+    setSavingFolderName(true);
+    setRenameFolderError("");
+    const res = await fetch(`/api/folders/${renamingFolder.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: renameFolderName.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setRenameFolderError(data.error ?? td("renameFolderFailed"));
+      setSavingFolderName(false);
+      return;
+    }
+
+    setSavingFolderName(false);
+    setRenamingFolder(null);
+    setRenameFolderName("");
+    await refreshFolderView(currentFolderId);
+  }
+
   async function deleteFolder(folderId: string) {
     const ok = await confirm({
       title: "Xóa thư mục?",
@@ -430,6 +470,16 @@ export default function DocumentsPage() {
     }
   }
 
+  function openReupload(doc: Document) {
+    setReuploadDoc(doc);
+    setSelectedFile(null);
+    setUploadDescription("");
+    setUploadError("");
+    setUploadProgress(null);
+    setShowNewFolder(false);
+    setShowUploadPanel(true);
+  }
+
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!selectedFile) return;
@@ -438,17 +488,29 @@ export default function DocumentsPage() {
     setUploadProgress(0);
 
     try {
-      // 1. Presign: create the record + get a direct-to-R2 upload URL
-      const presignRes = await fetch("/api/upload/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          size: selectedFile.size,
-          description: uploadDescription.trim() || undefined,
-          folder_id: currentFolderId ?? undefined,
-        }),
-      });
+      // 1. Presign: create a new record, or replace an existing failed record.
+      const presignRes = await fetch(
+        reuploadDoc
+          ? `/api/documents/${reuploadDoc.id}/reupload`
+          : "/api/upload/presign",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            reuploadDoc
+              ? {
+                  filename: selectedFile.name,
+                  size: selectedFile.size,
+                }
+              : {
+                  filename: selectedFile.name,
+                  size: selectedFile.size,
+                  description: uploadDescription.trim() || undefined,
+                  folder_id: currentFolderId ?? undefined,
+                },
+          ),
+        },
+      );
       const presign = await presignRes.json();
       if (!presignRes.ok) {
         throw new Error(presign.error ?? "Upload failed");
@@ -463,15 +525,18 @@ export default function DocumentsPage() {
       );
 
       // 3. Complete: server verifies the object and queues processing (transcribe once)
-      let completeRes = await fetch("/api/upload/complete", {
+      const completeUrl = reuploadDoc
+        ? `/api/documents/${reuploadDoc.id}/reupload/complete`
+        : "/api/upload/complete";
+      let completeRes = await fetch(completeUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ document_id: presign.document_id }),
       });
-      if (!completeRes.ok) {
+      if (!completeRes.ok && completeRes.status === 400) {
         // One retry — R2 head can briefly lag after a large PUT
         await new Promise((r) => setTimeout(r, 1500));
-        completeRes = await fetch("/api/upload/complete", {
+        completeRes = await fetch(completeUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ document_id: presign.document_id }),
@@ -484,7 +549,7 @@ export default function DocumentsPage() {
 
       // Wait until worker finishes (transcribe once → save to DB)
       const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name);
-      if (isMedia) {
+      if (isMedia && !reuploadDoc) {
         await waitForDocumentProcessing(presign.document_id);
       }
     } catch (err) {
@@ -497,6 +562,7 @@ export default function DocumentsPage() {
     setUploadProgress(null);
     setUploadDescription("");
     setSelectedFile(null);
+    setReuploadDoc(null);
     setShowUploadPanel(false);
     await refreshFolderView(currentFolderId);
   }
@@ -775,6 +841,56 @@ export default function DocumentsPage() {
           <MarkdownContent content={summaryText} />
         )}
       </Dialog>
+      <Dialog
+        open={renamingFolder !== null}
+        title={td("renameFolderTitle")}
+        onClose={closeRenameFolder}
+        footer={
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={savingFolderName}
+              onClick={closeRenameFolder}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button
+              type="submit"
+              form="rename-folder-form"
+              size="sm"
+              disabled={savingFolderName || !renameFolderName.trim()}
+            >
+              {savingFolderName ? td("renaming") : tc("save")}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="rename-folder-form"
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void renameFolder();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="rename-folder-name">{td("folderName")}</Label>
+            <Input
+              id="rename-folder-name"
+              value={renameFolderName}
+              onChange={(event) => setRenameFolderName(event.target.value)}
+              maxLength={100}
+              autoFocus
+              disabled={savingFolderName}
+            />
+          </div>
+          {renameFolderError && (
+            <p className="text-sm text-destructive">{renameFolderError}</p>
+          )}
+        </form>
+      </Dialog>
       {sidebarOpen && (
         <button
           type="button"
@@ -1016,6 +1132,7 @@ export default function DocumentsPage() {
                   onClick={() => {
                     setAddMenuOpen(false);
                     setShowNewFolder(false);
+                    setReuploadDoc(null);
                     setShowUploadPanel(true);
                   }}
                 >
@@ -1103,22 +1220,29 @@ export default function DocumentsPage() {
               onSubmit={handleUpload}
               className="flex w-full flex-col gap-4"
             >
+              {reuploadDoc && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+                  {td("reuploadNotice", { filename: reuploadDoc.filename })}
+                </div>
+              )}
               <FileDropzone
                 disabled={uploading}
                 selectedFile={selectedFile}
                 onFileSelect={setSelectedFile}
               />
-              <div className="w-full">
-                <Label className="text-xs">Mô tả (tuỳ chọn)</Label>
-                <Textarea
-                  value={uploadDescription}
-                  onChange={(e) => setUploadDescription(e.target.value)}
-                  placeholder="Thêm mô tả để dễ tìm lại tài liệu sau này..."
-                  rows={4}
-                  maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
-                  className="mt-1.5 w-full resize-y text-sm min-h-24"
-                />
-              </div>
+              {!reuploadDoc && (
+                <div className="w-full">
+                  <Label className="text-xs">Mô tả (tuỳ chọn)</Label>
+                  <Textarea
+                    value={uploadDescription}
+                    onChange={(e) => setUploadDescription(e.target.value)}
+                    placeholder="Thêm mô tả để dễ tìm lại tài liệu sau này..."
+                    rows={4}
+                    maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
+                    className="mt-1.5 w-full resize-y text-sm min-h-24"
+                  />
+                </div>
+              )}
               {uploading && uploadProgress !== null && (
                 <div className="w-full">
                   <div className="flex justify-between text-xs text-muted-foreground mb-1">
@@ -1159,6 +1283,8 @@ export default function DocumentsPage() {
                     setSelectedFile(null);
                     setUploadDescription("");
                     setUploadError("");
+                    setUploadProgress(null);
+                    setReuploadDoc(null);
                   }}
                 >
                   Đóng
@@ -1346,6 +1472,7 @@ export default function DocumentsPage() {
                             key={folder.id}
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
+                            onRename={() => openRenameFolder(folder)}
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                           />
@@ -1358,6 +1485,7 @@ export default function DocumentsPage() {
                             key={folder.id}
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
+                            onRename={() => openRenameFolder(folder)}
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                           />
@@ -1459,6 +1587,13 @@ export default function DocumentsPage() {
                   isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
                 }
                 reprocessingOcr={reprocessingOcr}
+                onReupload={
+                  selectedDoc.status === "failed" &&
+                  selectedDoc.file_type !== "note"
+                    ? () => openReupload(selectedDoc)
+                    : undefined
+                }
+                reuploading={uploading && reuploadDoc?.id === selectedDoc.id}
                 onEditNote={
                   selectedDoc.file_type === "note"
                     ? () => openEditNoteModal(selectedDoc)

@@ -27,6 +27,7 @@ export function buildSystemPrompt(sources: SourceChunk[]): string {
 Quy tắc:
 ${LANGUAGE_RULE}
 - Chỉ trả lời câu hỏi mới nhất của người dùng.
+- Khi user nhắc tên file, thương hiệu, hoặc từ khóa giống tên tài liệu — ưu tiên nguồn có filename khớp.
 - Khi trích dẫn, dùng đúng tên file từ thuộc tính filename. KHÔNG dùng UUID hay document ID.
 - Nếu ngữ cảnh không đủ để trả lời, nói rõ — không bịa.
 - Dùng Markdown khi hữu ích (danh sách, in đậm).

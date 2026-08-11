@@ -28,4 +28,21 @@ describe('filterRelevantChunks', () => {
     expect(result.length).toBeGreaterThan(0)
     expect(result[0].score).toBe(0.126)
   })
+
+  it('keeps filename matches even below the score threshold', () => {
+    const named: SearchResult = {
+      point_id: 'fn',
+      score: 0.05,
+      payload: {
+        user_id: 'u',
+        document_id: 'word',
+        filename: 'leishine.docx',
+        chunk_index: 0,
+        chunk_text: '雷赛',
+        matched_by_filename: true,
+      },
+    }
+    const result = filterRelevantChunks([named, chunk(0.05)])
+    expect(result.some((r) => r.payload.document_id === 'word')).toBe(true)
+  })
 })

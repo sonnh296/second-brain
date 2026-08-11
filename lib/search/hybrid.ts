@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { searchChunks, type SearchResult } from '../vector'
 import { logger } from '../logger'
+import { loadFilenameMatchedChunks, mergeFilenameMatches } from './filename-match'
 
 export interface HybridSearchResult {
   document_id: string
@@ -15,7 +16,8 @@ const KEYWORD_WEIGHT = 0.4
 const VECTOR_WEIGHT = 0.6
 
 /**
- * Hybrid retrieval: Qdrant vector search + Postgres full-text search, fused by RRF-style scoring.
+ * Hybrid retrieval: Qdrant vector + Postgres FTS + filename match, fused by RRF-style scoring.
+ * Filename hits are prepended so they are not dropped by the later top-N cutoff.
  */
 export async function hybridSearch(
   supabase: SupabaseClient,
@@ -27,13 +29,14 @@ export async function hybridSearch(
 ): Promise<SearchResult[]> {
   const candidateCount = Number(process.env.RERANK_CANDIDATES ?? 20)
 
-  const [vectorResults, keywordResults] = await Promise.all([
+  const [vectorResults, keywordResults, filenameResults] = await Promise.all([
     searchChunks(userId, vector, candidateCount),
     keywordSearchChunks(supabase, userId, query, candidateCount, options.serviceRole),
+    loadFilenameMatchedChunks(supabase, userId, query),
   ])
 
   const fused = fuseResults(vectorResults, keywordResults, topK)
-  return fused
+  return mergeFilenameMatches(fused, filenameResults, topK)
 }
 
 async function keywordSearchChunks(

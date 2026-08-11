@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
 
 const UpdateFolderSchema = z.object({
-  name: z.string().min(1).max(100).trim().optional(),
+  name: z.string().trim().min(1).max(100).optional(),
   parent_id: z.string().uuid().nullable().optional(),
   color: z
     .string()
@@ -149,6 +149,9 @@ export async function PATCH(
   if (error) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'Đã có thư mục cùng tên ở vị trí này' }, { status: 409 })
+    }
+    if (error.code === 'PGRST116') {
+      return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
     }
     return NextResponse.json({ error: 'Failed to update folder' }, { status: 500 })
   }

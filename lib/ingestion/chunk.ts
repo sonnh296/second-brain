@@ -55,3 +55,10 @@ export function chunkText(text: string): TextChunk[] {
 
   return chunks
 }
+
+/** Prefix filename so vector/keyword search can match queries that use the file name. */
+export function textForEmbedding(filename: string, chunkText: string): string {
+  const name = filename.trim()
+  if (!name) return chunkText
+  return `Tên file: ${name}\n\n${chunkText}`
+}

@@ -46,7 +46,7 @@ const MANAGEMENT_PHRASES = [
   'restore note',
 ]
 
-const STOP_WORDS = new Set([
+export const STOP_WORDS = new Set([
   'tôi',
   'toi',
   'có',
@@ -119,7 +119,7 @@ export function isDocumentManagementQuery(text: string): boolean {
 
 /** Keywords for filename / description matching (e.g. ielts, startup). */
 export function extractSearchKeywords(text: string): string[] {
-  const normalized = normalizeQuery(text).replace(/[^\w\s-]/g, ' ')
+  const normalized = normalizeQuery(text).replace(/[^\p{L}\p{N}\s-]/gu, ' ')
   const tokens = normalized.split(/\s+/).filter((w) => w.length > 1 && !STOP_WORDS.has(w))
   return [...new Set(tokens)].slice(0, 8)
 }
