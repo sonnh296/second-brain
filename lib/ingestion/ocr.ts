@@ -2,6 +2,7 @@ import * as fs from 'fs/promises'
 import { ImageAnnotatorClient } from '@google-cloud/vision'
 import { isImageType } from '../upload/file-types'
 import { logger } from '../logger'
+export { OCR_WEAK_CONTENT_MESSAGE, isOcrWeakContentWarning } from './ocr-status'
 
 let client: ImageAnnotatorClient | null = null
 
@@ -20,14 +21,6 @@ export function getOcrLanguageHints(): string[] {
   const raw = process.env.OCR_LANGUAGE_HINTS?.trim()
   if (!raw) return DEFAULT_LANGUAGE_HINTS
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
-}
-
-/** Soft warning stored on documents when OCR finds little usable text (status stays done). */
-export const OCR_WEAK_CONTENT_MESSAGE =
-  'Nội dung OCR quá ngắn hoặc không rõ nghĩa — ảnh vẫn được lưu. Bạn muốn giữ và sử dụng không?'
-
-export function isOcrWeakContentWarning(message: string | null | undefined): boolean {
-  return Boolean(message?.includes('Nội dung OCR quá ngắn hoặc không rõ nghĩa'))
 }
 
 export type OcrExtractResult = {

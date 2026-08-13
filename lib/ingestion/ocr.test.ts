@@ -3,9 +3,8 @@ import {
   estimateOcrCostUsd,
   isOcrEligibleType,
   isLowQualityOcrText,
-  isOcrWeakContentWarning,
-  OCR_WEAK_CONTENT_MESSAGE,
 } from './ocr'
+import { isOcrWeakContentWarning, OCR_WEAK_CONTENT_MESSAGE } from './ocr-status'
 
 describe('isOcrEligibleType', () => {
   it('accepts raster images', () => {

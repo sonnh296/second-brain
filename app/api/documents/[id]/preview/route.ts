@@ -5,7 +5,7 @@ import {
   isImageType,
   isTranscribableType,
 } from '@/lib/upload/file-types'
-import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr-status'
 
 /** Strip legacy "Mô tả: ..." prefix so the UI shows only the subtitle text. */
 function subtitleText(raw: string | null): string | null {

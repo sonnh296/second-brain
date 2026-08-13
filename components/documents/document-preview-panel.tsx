@@ -17,7 +17,7 @@ import {
   isTranscribableType,
   MAX_DOCUMENT_DESCRIPTION_LENGTH,
 } from '@/lib/upload/file-types'
-import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr-status'
 import type { Document, Tag } from '@/lib/db/types'
 
 type PanelTab = 'content' | 'subtitles' | 'description' | 'details'

@@ -11,8 +11,8 @@ import {
   extractTextFromImage,
   isOcrEligibleType,
   isOcrEnabled,
-  OCR_WEAK_CONTENT_MESSAGE,
 } from './ocr'
+import { OCR_WEAK_CONTENT_MESSAGE } from './ocr-status'
 import { transcribeMediaFile, isTranscriptionEnabled } from './transcribe'
 import { upsertChunks, ensureCollection, deleteByDocument, listChunksByDocument } from '../vector'
 import { downloadToFile } from '../storage'

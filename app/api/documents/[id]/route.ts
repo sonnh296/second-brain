@@ -6,7 +6,7 @@ import { enqueueIngestionJob } from '@/lib/queue'
 import { fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
 import { softDeleteDocument } from '@/lib/documents/soft-delete'
 import { hardDeleteDocument } from '@/lib/documents/hard-delete'
-import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr-status'
 import { logger } from '@/lib/logger'
 
 const UpdateDocumentSchema = z.object({
