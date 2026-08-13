@@ -17,6 +17,7 @@ import {
   isTranscribableType,
   MAX_DOCUMENT_DESCRIPTION_LENGTH,
 } from '@/lib/upload/file-types'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
 import type { Document, Tag } from '@/lib/db/types'
 
 type PanelTab = 'content' | 'subtitles' | 'description' | 'details'
@@ -69,6 +70,8 @@ interface DocumentPreviewPanelProps {
   reprocessingOcr?: boolean
   onReupload?: () => void
   reuploading?: boolean
+  onKeepWeakOcr?: () => void
+  keepingWeakOcr?: boolean
   onEditNote?: () => void
   onDelete: () => void
   deleting?: boolean
@@ -125,8 +128,13 @@ function ContentPreview({
     )
   }
 
-  // Media can play while subtitles are still being generated.
-  if (doc.status !== 'done' && doc.file_type !== 'note' && !isMedia) {
+  // Media/images can be viewed while processing, or after a soft OCR warning / hard fail.
+  if (
+    doc.status !== 'done' &&
+    doc.file_type !== 'note' &&
+    !isMedia &&
+    !isImageType(doc.file_type)
+  ) {
     return (
       <PreviewBody>
         <div className="p-4 text-sm text-muted-foreground">
@@ -394,6 +402,8 @@ export function DocumentPreviewPanel({
   reprocessingOcr,
   onReupload,
   reuploading,
+  onKeepWeakOcr,
+  keepingWeakOcr = false,
   onEditNote,
   onDelete,
   deleting = false,
@@ -404,7 +414,13 @@ export function DocumentPreviewPanel({
   const viewerUrl = `/api/documents/${doc.id}/download`
   const canInline = isBrowserInlineType(doc.file_type)
   const isMedia = isTranscribableType(doc.file_type)
-  const canOpenDownload = doc.file_type === 'note' || doc.status === 'done' || isMedia
+  const canOpenDownload =
+    doc.file_type === 'note' ||
+    doc.status === 'done' ||
+    isMedia ||
+    isImageType(doc.file_type)
+  const showWeakOcrPrompt =
+    Boolean(onKeepWeakOcr) && isOcrWeakContentWarning(doc.error_message) && doc.status === 'done'
 
   useEffect(() => {
     setEditingName(false)
@@ -505,6 +521,34 @@ export function DocumentPreviewPanel({
       {saveError && (
         <div className="shrink-0 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
           {saveError}
+        </div>
+      )}
+      {showWeakOcrPrompt && (
+        <div className="shrink-0 border-b bg-amber-500/10 px-4 py-3 space-y-2">
+          <p className="text-xs text-amber-950 dark:text-amber-100 leading-relaxed">
+            Nội dung OCR quá ngắn hoặc không rõ nghĩa. Ảnh vẫn xem và dùng bình thường được — bạn
+            muốn giữ không?
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="flex-1"
+              onClick={onKeepWeakOcr}
+              disabled={keepingWeakOcr || deleting}
+            >
+              {keepingWeakOcr ? 'Đang lưu...' : 'Giữ ảnh'}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1"
+              onClick={onDelete}
+              disabled={keepingWeakOcr || deleting}
+            >
+              {deleting ? 'Đang xóa...' : 'Xóa'}
+            </Button>
+          </div>
         </div>
       )}
 

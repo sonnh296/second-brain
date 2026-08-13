@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCitationsFromResponse } from './citations'
+import { dedupeCitedSourcesByFile, parseCitationsFromResponse } from './citations'
 
 const sources = [
   {
@@ -65,6 +65,54 @@ describe('parseCitationsFromResponse', () => {
         file_type: 'pdf',
         page: 4,
       },
+    ])
+  })
+
+  it('dedupes multiple chunks from the same file', () => {
+    const multiChunk = [
+      ...sources,
+      {
+        filename: 'vietnam-startup-ecosystem.txt',
+        chunk_index: 2,
+        chunk_text: 'More VNG',
+        score: 0.8,
+        document_id: 'doc-1',
+        file_type: 'txt',
+      },
+    ]
+    const text =
+      'Answer.\n\n<!--CITATIONS:["vietnam-startup-ecosystem.txt:0","vietnam-startup-ecosystem.txt:2","other.pdf:3"]-->'
+    const { citedSources } = parseCitationsFromResponse(text, multiChunk)
+    expect(citedSources).toEqual([
+      {
+        filename: 'vietnam-startup-ecosystem.txt',
+        chunk_index: 0,
+        document_id: 'doc-1',
+        file_type: 'txt',
+        page: undefined,
+      },
+      {
+        filename: 'other.pdf',
+        chunk_index: 3,
+        document_id: 'doc-2',
+        file_type: 'pdf',
+        page: 4,
+      },
+    ])
+  })
+})
+
+describe('dedupeCitedSourcesByFile', () => {
+  it('keeps one source per document_id', () => {
+    expect(
+      dedupeCitedSourcesByFile([
+        { filename: 'a.docx', chunk_index: 0, document_id: 'd1', file_type: 'docx' },
+        { filename: 'a.docx', chunk_index: 4, document_id: 'd1', file_type: 'docx' },
+        { filename: 'b.pdf', chunk_index: 1, document_id: 'd2', file_type: 'pdf', page: 2 },
+      ])
+    ).toEqual([
+      { filename: 'a.docx', chunk_index: 0, document_id: 'd1', file_type: 'docx' },
+      { filename: 'b.pdf', chunk_index: 1, document_id: 'd2', file_type: 'pdf', page: 2 },
     ])
   })
 })

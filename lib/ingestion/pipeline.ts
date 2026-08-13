@@ -7,7 +7,12 @@ import { isIndexableType, isTranscribableType } from '../upload/file-types'
 import { parseFileWithPages, type PageOffset } from './parse'
 import { chunkText, textForEmbedding } from './chunk'
 import { embedBatch } from './embed'
-import { extractTextFromImage, isOcrEligibleType, isOcrEnabled } from './ocr'
+import {
+  extractTextFromImage,
+  isOcrEligibleType,
+  isOcrEnabled,
+  OCR_WEAK_CONTENT_MESSAGE,
+} from './ocr'
 import { transcribeMediaFile, isTranscriptionEnabled } from './transcribe'
 import { upsertChunks, ensureCollection, deleteByDocument, listChunksByDocument } from '../vector'
 import { downloadToFile } from '../storage'
@@ -339,7 +344,27 @@ export async function runIngestionPipeline(
         throw err
       }
       if (canOcr) {
-        rawText = await extractTextFromImage(tempPath!)
+        const ocr = await extractTextFromImage(tempPath!)
+        if (!ocr.usable) {
+          await supabase
+            .from('documents')
+            .update({
+              status: 'done',
+              chunk_count: 0,
+              error_message: OCR_WEAK_CONTENT_MESSAGE,
+              ocr_text: ocr.text || null,
+              extracted_content: ocr.text || null,
+            })
+            .eq('id', documentId)
+          logger.info('Image stored without OCR indexing (weak/empty text)', {
+            documentId,
+            fileType,
+            userId,
+            charCount: ocr.text.length,
+          })
+          return
+        }
+        rawText = ocr.text
         logger.info('Image OCR text extracted for indexing', {
           documentId,
           fileType,

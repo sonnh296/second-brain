@@ -5,6 +5,7 @@ import {
   isImageType,
   isTranscribableType,
 } from '@/lib/upload/file-types'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
 
 /** Strip legacy "Mô tả: ..." prefix so the UI shows only the subtitle text. */
 function subtitleText(raw: string | null): string | null {
@@ -30,7 +31,9 @@ export async function GET(
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('id, filename, file_type, status, note_content, extracted_content, ocr_text')
+    .select(
+      'id, filename, file_type, status, note_content, extracted_content, ocr_text, error_message'
+    )
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -69,6 +72,15 @@ export async function GET(
       })
     }
 
+    let message: string | undefined
+    if (doc.status === 'failed') {
+      message = 'Xử lý ảnh thất bại'
+    } else if (isOcrWeakContentWarning(doc.error_message)) {
+      message = 'OCR gần như không đọc được chữ — ảnh vẫn dùng bình thường'
+    } else if (!storedContent) {
+      message = 'Ảnh chưa có văn bản trích xuất'
+    }
+
     return NextResponse.json({
       filename: doc.filename,
       file_type: doc.file_type,
@@ -78,7 +90,7 @@ export async function GET(
       image_url: viewerUrl,
       viewer_url: viewerUrl,
       can_inline: true,
-      message: storedContent ? undefined : 'Ảnh chưa có văn bản trích xuất',
+      message,
     })
   }
 

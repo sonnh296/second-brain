@@ -13,6 +13,7 @@ import { SourceBadge } from '@/components/chat/source-badge'
 import { PendingActionCard } from '@/components/chat/pending-action-card'
 import type { AttachedImage, ChatMode, PreviewModal, SessionMessage } from '@/components/chat/types'
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, type ChatModelId } from '@/lib/ai/models'
+import { dedupeCitedSourcesByFile } from '@/lib/ai/citations'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import {
   createDraftSession,
@@ -634,11 +635,13 @@ export default function ChatPage() {
                   const attachments = sessionMsg.attachments ?? []
                   const isLastAssistant =
                     m.role === 'assistant' && idx === messages.length - 1
-                  const citedSources = sessionMsg.cited_sources?.length
-                    ? sessionMsg.cited_sources
-                    : isLastAssistant
-                      ? streamCitations
-                      : []
+                  const citedSources = dedupeCitedSourcesByFile(
+                    sessionMsg.cited_sources?.length
+                      ? sessionMsg.cited_sources
+                      : isLastAssistant
+                        ? streamCitations
+                        : []
+                  )
                   return (
                   <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div
@@ -677,9 +680,9 @@ export default function ChatPage() {
                         <div className="mt-2 pt-2 border-t border-border/40">
                           <p className="text-xs text-muted-foreground mb-1">Nguồn liên quan:</p>
                           <div className="flex flex-wrap gap-1">
-                            {citedSources.map((src, i) => (
+                            {citedSources.map((src) => (
                               <SourceBadge
-                                key={`${src.filename}-${src.chunk_index}-${i}`}
+                                key={src.document_id || src.filename}
                                 src={src}
                                 onImageClick={openCitationImage}
                               />

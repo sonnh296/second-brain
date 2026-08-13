@@ -22,6 +22,20 @@ export function getOcrLanguageHints(): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
+/** Soft warning stored on documents when OCR finds little usable text (status stays done). */
+export const OCR_WEAK_CONTENT_MESSAGE =
+  'Nội dung OCR quá ngắn hoặc không rõ nghĩa — ảnh vẫn được lưu. Bạn muốn giữ và sử dụng không?'
+
+export function isOcrWeakContentWarning(message: string | null | undefined): boolean {
+  return Boolean(message?.includes('Nội dung OCR quá ngắn hoặc không rõ nghĩa'))
+}
+
+export type OcrExtractResult = {
+  text: string
+  /** False when empty/garbled — caller should store the image without indexing. */
+  usable: boolean
+}
+
 /** Detect garbled OCR (wrong language hints, grid noise, etc.). */
 export function isLowQualityOcrText(text: string): boolean {
   if (!text || text.trim().length < 4) return true
@@ -79,8 +93,9 @@ async function runDocumentOcr(buffer: Buffer, languageHints: string[]): Promise<
 /**
  * Extract plain text from an image using Google Vision DOCUMENT_TEXT_DETECTION.
  * Retries with Chinese-first hints when output looks garbled.
+ * Low-quality / empty results return usable:false — do not fail the upload.
  */
-export async function extractTextFromImage(filePath: string): Promise<string> {
+export async function extractTextFromImage(filePath: string): Promise<OcrExtractResult> {
   if (!isOcrEnabled()) {
     throw new Error('OCR is disabled — set OCR_ENABLED=true')
   }
@@ -103,13 +118,11 @@ export async function extractTextFromImage(filePath: string): Promise<string> {
 
   if (!text || isLowQualityOcrText(text)) {
     logger.warn('OCR returned low-quality or empty text', { filePath, charCount: text.length })
-    throw new Error(
-      'OCR không đọc được chữ rõ ràng — thử ảnh sáng hơn, thẳng góc, hoặc chữ in thay vì viết tay'
-    )
+    return { text: text.trim(), usable: false }
   }
 
   logger.info('OCR completed', { filePath, charCount: text.length })
-  return text
+  return { text, usable: true }
 }
 
 /** Rough monthly OCR cost estimate (Google Vision DOCUMENT_TEXT_DETECTION pricing). */

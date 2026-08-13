@@ -1,7 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
-import { isImageType } from '@/lib/upload/file-types'
+import { isExtractedViewType, isImageType } from '@/lib/upload/file-types'
 import type { CitedSource } from '@/lib/db/types'
 
 export function SourceBadge({
@@ -14,6 +14,7 @@ export function SourceBadge({
   const isImage = isImageType(src.file_type ?? '')
   const isNote = src.file_type === 'note'
   const isPdf = src.file_type === 'pdf'
+  const opensExtractedView = isExtractedViewType(src.file_type ?? '')
   const hasLink = !!src.document_id
   const pageAnchor = isPdf && src.page ? `#page=${src.page}` : ''
 
@@ -21,22 +22,26 @@ export function SourceBadge({
     if (!hasLink || !src.document_id) return
     if (isImage) {
       onImageClick(src)
-    } else if (isNote) {
-      window.open('/documents', '_blank')
-    } else {
-      window.open(`/api/documents/${src.document_id}/download${pageAnchor}`, '_blank')
+      return
     }
+    if (isNote) {
+      window.open('/documents', '_blank')
+      return
+    }
+    if (opensExtractedView) {
+      window.open(`/documents/${src.document_id}/view`, '_blank')
+      return
+    }
+    window.open(`/api/documents/${src.document_id}/download${pageAnchor}`, '_blank')
   }
 
-  const title = !hasLink
-    ? undefined
-    : isImage
-      ? 'Xem ảnh'
-      : isNote
-        ? 'Mở ghi chú'
-        : isPdf && src.page
-          ? `Mở trang ${src.page} trong tab mới`
-          : 'Mở tài liệu trong tab mới'
+  let title: string | undefined
+  if (!hasLink) title = undefined
+  else if (isImage) title = 'Xem ảnh'
+  else if (isNote) title = 'Mở ghi chú'
+  else if (opensExtractedView) title = 'Xem nội dung trong tab mới'
+  else if (isPdf && src.page) title = `Mở trang ${src.page} trong tab mới`
+  else title = 'Mở tài liệu trong tab mới'
 
   return (
     <Badge

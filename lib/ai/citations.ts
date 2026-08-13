@@ -55,8 +55,26 @@ export function parseCitationsFromResponse(
       }
     }
 
-    return { content, citedSources }
+    return { content, citedSources: dedupeCitedSourcesByFile(citedSources) }
   } catch {
     return { content, citedSources: [] }
   }
+}
+
+/**
+ * One badge per file. Keep the first cited chunk (and its PDF page if any).
+ * Also used when rendering older messages that stored per-chunk citations.
+ */
+export function dedupeCitedSourcesByFile(sources: CitedSource[]): CitedSource[] {
+  const seen = new Set<string>()
+  const unique: CitedSource[] = []
+
+  for (const src of sources) {
+    const key = src.document_id || src.filename
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(src)
+  }
+
+  return unique
 }

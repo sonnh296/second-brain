@@ -186,6 +186,13 @@ export function isBrowserInlineType(fileType: string): boolean {
   return INLINE_VIEW_TYPES.has(fileType)
 }
 
+/** Office files the browser cannot display — open extracted-text viewer instead of download. */
+export const EXTRACTED_VIEW_TYPES = new Set(['docx', 'xlsx', 'xls', 'pptx', 'ppt'])
+
+export function isExtractedViewType(fileType: string): boolean {
+  return EXTRACTED_VIEW_TYPES.has(fileType)
+}
+
 export function mimeForType(fileType: string): string {
   return MIME_BY_TYPE[fileType] ?? 'application/octet-stream'
 }

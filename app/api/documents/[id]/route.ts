@@ -6,6 +6,7 @@ import { enqueueIngestionJob } from '@/lib/queue'
 import { fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
 import { softDeleteDocument } from '@/lib/documents/soft-delete'
 import { hardDeleteDocument } from '@/lib/documents/hard-delete'
+import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr'
 import { logger } from '@/lib/logger'
 
 const UpdateDocumentSchema = z.object({
@@ -16,6 +17,8 @@ const UpdateDocumentSchema = z.object({
   tag_ids: z.array(z.string().uuid()).max(20).optional(),
   folder_id: z.string().uuid().nullable().optional(),
   is_favorite: z.boolean().optional(),
+  /** Clear soft OCR warning after user chooses to keep the image. */
+  dismiss_ocr_warning: z.boolean().optional(),
 })
 
 export async function PATCH(
@@ -39,7 +42,7 @@ export async function PATCH(
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('id, file_type, r2_key, filename')
+    .select('id, file_type, r2_key, filename, error_message')
     .eq('id', documentId)
     .eq('user_id', user.id)
     .single()
@@ -53,6 +56,12 @@ export async function PATCH(
   if (parsed.data.description !== undefined) updates.description = parsed.data.description
   if (parsed.data.is_favorite !== undefined) updates.is_favorite = parsed.data.is_favorite
 
+  if (parsed.data.dismiss_ocr_warning) {
+    if (!isOcrWeakContentWarning(doc.error_message)) {
+      return NextResponse.json({ error: 'Không có cảnh báo OCR để bỏ' }, { status: 400 })
+    }
+    updates.error_message = null
+  }
   if (parsed.data.folder_id !== undefined) {
     if (parsed.data.folder_id) {
       const { data: folder } = await supabase

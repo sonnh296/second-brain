@@ -159,6 +159,7 @@ export default function DocumentsPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [savingFolder, setSavingFolder] = useState(false);
   const [reprocessingOcr, setReprocessingOcr] = useState(false);
+  const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -772,6 +773,25 @@ export default function DocumentsPage() {
       }
     }
     setReprocessingOcr(false);
+  }
+
+  async function keepWeakOcrImage() {
+    if (!selectedDoc) return;
+    setKeepingWeakOcr(true);
+    try {
+      const res = await fetch(`/api/documents/${selectedDoc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dismiss_ocr_warning: true }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setSelectedDoc(updated);
+        await refreshFolderView(currentFolderId);
+      }
+    } finally {
+      setKeepingWeakOcr(false);
+    }
   }
 
   async function handleDelete(documentId: string) {
@@ -1587,6 +1607,10 @@ export default function DocumentsPage() {
                   isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
                 }
                 reprocessingOcr={reprocessingOcr}
+                onKeepWeakOcr={
+                  isImageType(selectedDoc.file_type) ? keepWeakOcrImage : undefined
+                }
+                keepingWeakOcr={keepingWeakOcr}
                 onReupload={
                   selectedDoc.status === "failed" &&
                   selectedDoc.file_type !== "note"

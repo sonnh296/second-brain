@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { estimateOcrCostUsd, isOcrEligibleType, isLowQualityOcrText } from './ocr'
+import {
+  estimateOcrCostUsd,
+  isOcrEligibleType,
+  isLowQualityOcrText,
+  isOcrWeakContentWarning,
+  OCR_WEAK_CONTENT_MESSAGE,
+} from './ocr'
 
 describe('isOcrEligibleType', () => {
   it('accepts raster images', () => {
@@ -23,6 +29,19 @@ describe('isLowQualityOcrText', () => {
 
   it('accepts Chinese OCR output', () => {
     expect(isLowQualityOcrText('书籍四型\n社会在发展,生活越来越好')).toBe(false)
+  })
+
+  it('flags very short empty-like text', () => {
+    expect(isLowQualityOcrText('')).toBe(true)
+    expect(isLowQualityOcrText('ab')).toBe(true)
+  })
+})
+
+describe('isOcrWeakContentWarning', () => {
+  it('matches soft OCR warning message', () => {
+    expect(isOcrWeakContentWarning(OCR_WEAK_CONTENT_MESSAGE)).toBe(true)
+    expect(isOcrWeakContentWarning('Lỗi khác')).toBe(false)
+    expect(isOcrWeakContentWarning(null)).toBe(false)
   })
 })
 
