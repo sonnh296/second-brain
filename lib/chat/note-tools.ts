@@ -357,12 +357,29 @@ export function buildNoteTools(ctx: NoteToolsContext) {
             docs = data ?? []
           }
 
+          let folders: {
+            id: string
+            name: string
+            parent_id: string | null
+            description: string | null
+          }[] = []
+          if (term) {
+            const { data: folderRows } = await supabase
+              .from('folders')
+              .select('id, name, parent_id, description')
+              .eq('user_id', userId)
+              .or(`name.ilike.%${term}%,description.ilike.%${term}%`)
+              .order('name')
+              .limit(10)
+            folders = folderRows ?? []
+          }
+
           return {
             matched_by_query: matchedByQuery,
             hint: matchedByQuery
               ? undefined
               : term
-                ? `Không khớp tên "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
+                ? `Không khớp tên file "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
                 : 'Danh sách file gần đây.',
             documents: docs.map((d) => ({
               document_id: d.id,
@@ -370,6 +387,12 @@ export function buildNoteTools(ctx: NoteToolsContext) {
               file_type: d.file_type,
               folder_id: d.folder_id,
               description: d.description,
+            })),
+            folders: folders.map((f) => ({
+              folder_id: f.id,
+              name: f.name,
+              parent_id: f.parent_id,
+              description: f.description,
             })),
           }
         } catch (err) {
@@ -380,23 +403,34 @@ export function buildNoteTools(ctx: NoteToolsContext) {
     }),
 
     list_folders: tool({
-      description: 'Liệt kê thư mục của người dùng (để lấy folder_id khi di chuyển tài liệu).',
+      description:
+        'Liệt kê hoặc tìm thư mục theo tên/mô tả (lấy folder_id khi di chuyển file, hoặc khi user hỏi về folder).',
       parameters: z.object({
-        _: z.string().optional().describe('Bỏ trống'),
+        query: z
+          .string()
+          .max(200)
+          .optional()
+          .describe('Từ khóa tên/mô tả thư mục. Bỏ trống để liệt kê tất cả.'),
       }),
-      execute: async () => {
+      execute: async ({ query }) => {
         try {
-          const { data: folders } = await supabase
+          const term = sanitizeSearchTerm(!query || query === '*' ? '' : query)
+          let builder = supabase
             .from('folders')
-            .select('id, name, parent_id')
+            .select('id, name, parent_id, description')
             .eq('user_id', userId)
             .order('name')
             .limit(100)
+          if (term) {
+            builder = builder.or(`name.ilike.%${term}%,description.ilike.%${term}%`)
+          }
+          const { data: folders } = await builder
           return {
             folders: (folders ?? []).map((f) => ({
               folder_id: f.id,
               name: f.name,
               parent_id: f.parent_id,
+              description: f.description,
             })),
           }
         } catch (err) {
@@ -745,10 +779,11 @@ export function buildNoteTools(ctx: NoteToolsContext) {
 /** System prompt block describing note/document tools and safety rules. */
 export const NOTE_TOOLS_PROMPT = `
 Bạn có thể quản lý ghi chú và tài liệu của người dùng qua các tool:
-- search_notes / search_documents: tìm note/tài liệu — LUÔN gọi trước khi thao tác để lấy đúng document_id
+- search_notes / search_documents: tìm note/tài liệu; search_documents cũng trả folders khớp tên/mô tả
+- list_folders: liệt kê hoặc tìm thư mục theo tên/mô tả để lấy folder_id
 - create_note: tạo note mới (chạy ngay)
 - restore_note: khôi phục note đã xóa (hoàn tác, chạy ngay)
-- list_folders / list_tags: liệt kê thư mục/tag để lấy ID
+- list_tags: liệt kê tag để lấy ID
 - propose_update_note / propose_delete_note: đề xuất sửa/xóa note
 - propose_rename_document / propose_move_document / propose_tag_document: đề xuất đổi tên / di chuyển / gắn tag cho mọi loại tài liệu
 - Các tool propose_* chỉ TẠO ĐỀ XUẤT; người dùng phải bấm Xác nhận trong giao diện thì thao tác mới được thực thi.

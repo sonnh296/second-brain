@@ -535,20 +535,51 @@ export function DocumentPreviewPanel({
               variant="default"
               className="flex-1"
               onClick={onKeepWeakOcr}
-              disabled={keepingWeakOcr || deleting}
+              disabled={keepingWeakOcr || deleting || reuploading}
             >
               {keepingWeakOcr ? 'Đang lưu...' : 'Giữ ảnh'}
             </Button>
+            {onReupload && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={onReupload}
+                disabled={keepingWeakOcr || deleting || reuploading}
+              >
+                {reuploading ? t('reuploading') : t('reuploadFile')}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
               className="flex-1"
               onClick={onDelete}
-              disabled={keepingWeakOcr || deleting}
+              disabled={keepingWeakOcr || deleting || reuploading}
             >
               {deleting ? 'Đang xóa...' : 'Xóa'}
             </Button>
           </div>
+        </div>
+      )}
+
+      {doc.status === 'failed' && isImageType(doc.file_type) && onReupload && (
+        <div className="shrink-0 border-b bg-destructive/5 px-4 py-3 space-y-2">
+          <p className="text-xs text-destructive leading-relaxed">
+            {preview?.message ??
+              doc.error_message ??
+              'Xử lý ảnh thất bại. Bạn có thể tải file khác lên thay thế.'}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={onReupload}
+            disabled={reuploading}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {reuploading ? t('reuploading') : t('reuploadFile')}
+          </Button>
         </div>
       )}
 
@@ -640,6 +671,7 @@ export function DocumentPreviewPanel({
                   parent_id: f.parent_id,
                   name: f.name,
                   color: '#f59e0b',
+                  description: null,
                   created_at: '',
                   updated_at: '',
                 }))}

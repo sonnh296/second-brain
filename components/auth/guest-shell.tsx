@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { GuestAmbient } from "@/components/auth/guest-ambient";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
+import { APP_VERSION } from "@/lib/app-version";
 import { FileText, MessageSquare, Sparkles } from "lucide-react";
 
 export function GuestShell({
@@ -102,7 +103,7 @@ export function GuestShell({
           </ul>
 
           <p className="guest-rise guest-rise-7 mt-8 text-[11px] text-muted-foreground/80 hidden lg:block">
-            noteeverything.site
+            noteeverything.site · v{APP_VERSION}
           </p>
         </aside>
 

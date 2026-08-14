@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
+import { MAX_FOLDER_DESCRIPTION_LENGTH } from '@/lib/upload/file-types'
+
+const FOLDER_COLUMNS = 'id, parent_id, name, color, description, created_at, updated_at'
 
 const CreateFolderSchema = z.object({
   name: z.string().trim().min(1).max(100),
+  description: z.string().trim().max(MAX_FOLDER_DESCRIPTION_LENGTH).nullable().optional(),
   parent_id: z.string().uuid().nullable().optional(),
   color: z
     .string()
@@ -28,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (req.nextUrl.searchParams.get('all') === '1') {
     const { data, error } = await supabase
       .from('folders')
-      .select('id, parent_id, name, color, created_at, updated_at')
+      .select(FOLDER_COLUMNS)
       .eq('user_id', user.id)
       .order('name', { ascending: true })
 
@@ -42,7 +46,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('folders')
-    .select('id, parent_id, name, color, created_at, updated_at')
+    .select(FOLDER_COLUMNS)
     .eq('user_id', user.id)
     .order('name', { ascending: true })
 
@@ -95,9 +99,10 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       parent_id: parentId,
       name: parsed.data.name,
+      description: parsed.data.description?.trim() || null,
       color: parsed.data.color ?? '#f59e0b',
     })
-    .select('id, parent_id, name, color, created_at, updated_at')
+    .select(FOLDER_COLUMNS)
     .single()
 
   if (error) {

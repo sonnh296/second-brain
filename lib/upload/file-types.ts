@@ -18,6 +18,9 @@ export const TRANSCRIBABLE_TYPES = new Set(['mp3', 'wav', 'mp4', 'mov'])
 /** Max length for document description (upload + edit). */
 export const MAX_DOCUMENT_DESCRIPTION_LENGTH = 5000
 
+/** Max length for folder description (library search + chat tools, not RAG). */
+export const MAX_FOLDER_DESCRIPTION_LENGTH = 2000
+
 export const BLOCKED_EXTENSIONS = new Set([
   'exe',
   'bat',

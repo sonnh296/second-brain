@@ -56,7 +56,9 @@ import {
   TYPE_LABELS,
   isImageType,
   MAX_DOCUMENT_DESCRIPTION_LENGTH,
+  MAX_FOLDER_DESCRIPTION_LENGTH,
 } from "@/lib/upload/file-types";
+import { canReuploadDocument } from "@/lib/documents/can-reupload";
 import {
   putToR2WithProgress,
   waitForDocumentProcessing,
@@ -150,10 +152,12 @@ export default function DocumentsPage() {
     });
   }, [td]);
   const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderDescription, setNewFolderDescription] = useState("");
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [renamingFolder, setRenamingFolder] = useState<Folder | null>(null);
   const [renameFolderName, setRenameFolderName] = useState("");
+  const [renameFolderDescription, setRenameFolderDescription] = useState("");
   const [renameFolderError, setRenameFolderError] = useState("");
   const [savingFolderName, setSavingFolderName] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -325,12 +329,14 @@ export default function DocumentsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: newFolderName.trim(),
+        description: newFolderDescription.trim() || null,
         parent_id: currentFolderId,
       }),
     });
     setCreatingFolder(false);
     if (res.ok) {
       setNewFolderName("");
+      setNewFolderDescription("");
       setShowNewFolder(false);
       await refreshFolderView(currentFolderId);
     }
@@ -339,6 +345,7 @@ export default function DocumentsPage() {
   function openRenameFolder(folder: Folder) {
     setRenamingFolder(folder);
     setRenameFolderName(folder.name);
+    setRenameFolderDescription(folder.description ?? "");
     setRenameFolderError("");
   }
 
@@ -346,6 +353,7 @@ export default function DocumentsPage() {
     if (savingFolderName) return;
     setRenamingFolder(null);
     setRenameFolderName("");
+    setRenameFolderDescription("");
     setRenameFolderError("");
   }
 
@@ -356,7 +364,10 @@ export default function DocumentsPage() {
     const res = await fetch(`/api/folders/${renamingFolder.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: renameFolderName.trim() }),
+      body: JSON.stringify({
+        name: renameFolderName.trim(),
+        description: renameFolderDescription.trim() || null,
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -368,6 +379,7 @@ export default function DocumentsPage() {
     setSavingFolderName(false);
     setRenamingFolder(null);
     setRenameFolderName("");
+    setRenameFolderDescription("");
     await refreshFolderView(currentFolderId);
   }
 
@@ -432,6 +444,17 @@ export default function DocumentsPage() {
     });
     return result;
   }, [documents, typeFilter, statusFilter, tagFilter, searchQuery, sortBy]);
+
+  const visibleFolders = useMemo(() => {
+    if (typeFilter === "favorite") return [];
+    if (!searchQuery.trim()) return folders;
+    const q = searchQuery.toLowerCase();
+    return folders.filter(
+      (folder) =>
+        folder.name.toLowerCase().includes(q) ||
+        (folder.description?.toLowerCase().includes(q) ?? false),
+    );
+  }, [folders, searchQuery, typeFilter]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -906,6 +929,18 @@ export default function DocumentsPage() {
               disabled={savingFolderName}
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rename-folder-description">{td("folderDescription")}</Label>
+            <Textarea
+              id="rename-folder-description"
+              value={renameFolderDescription}
+              onChange={(event) => setRenameFolderDescription(event.target.value)}
+              maxLength={MAX_FOLDER_DESCRIPTION_LENGTH}
+              rows={3}
+              placeholder={td("folderDescriptionPlaceholder")}
+              disabled={savingFolderName}
+            />
+          </div>
           {renameFolderError && (
             <p className="text-sm text-destructive">{renameFolderError}</p>
           )}
@@ -1206,7 +1241,8 @@ export default function DocumentsPage() {
         </div>
 
         {showNewFolder && (
-          <div className="shrink-0 border-b bg-muted/30 px-4 py-3 flex flex-wrap items-end gap-2 max-w-md">
+          <div className="shrink-0 border-b bg-muted/30 px-4 py-3 flex flex-col gap-2 max-w-md">
+            <div className="flex flex-wrap items-end gap-2">
             <div className="flex-1 min-w-[140px]">
               <Label className="text-xs">Tên thư mục mới</Label>
               <Input
@@ -1231,6 +1267,18 @@ export default function DocumentsPage() {
             >
               Đóng
             </Button>
+            </div>
+            <div>
+              <Label className="text-xs">{td("folderDescription")}</Label>
+              <Textarea
+                value={newFolderDescription}
+                onChange={(e) => setNewFolderDescription(e.target.value)}
+                placeholder={td("folderDescriptionPlaceholder")}
+                maxLength={MAX_FOLDER_DESCRIPTION_LENGTH}
+                rows={2}
+                className="mt-1 text-sm"
+              />
+            </div>
           </div>
         )}
 
@@ -1464,7 +1512,7 @@ export default function DocumentsPage() {
                   </div>
                 ) : (typeFilter === "favorite"
                   ? filteredDocs.length === 0
-                  : folders.length === 0 && filteredDocs.length === 0) ? (
+                  : visibleFolders.length === 0 && filteredDocs.length === 0) ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                     {typeFilter === "favorite" ? (
                       <Star className="h-12 w-12 mb-3 opacity-40" />
@@ -1485,9 +1533,10 @@ export default function DocumentsPage() {
                 ) : (
                   <>
                     {typeFilter !== "favorite" &&
+                      visibleFolders.length > 0 &&
                       (viewMode === "grid" ? (
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-4">
-                        {folders.map((folder) => (
+                        {visibleFolders.map((folder) => (
                           <FolderGridItem
                             key={folder.id}
                             folder={folder}
@@ -1500,7 +1549,7 @@ export default function DocumentsPage() {
                       </div>
                     ) : (
                       <div className="space-y-1 mb-4">
-                        {folders.map((folder) => (
+                        {visibleFolders.map((folder) => (
                           <FolderListItem
                             key={folder.id}
                             folder={folder}
@@ -1514,7 +1563,7 @@ export default function DocumentsPage() {
                     ))}
 
                     {filteredDocs.length === 0 ? (
-                      typeFilter !== "favorite" && folders.length > 0 ? null : (
+                      typeFilter !== "favorite" && visibleFolders.length > 0 ? null : (
                         <p className="text-sm text-muted-foreground">
                           Không có tài liệu
                         </p>
@@ -1612,8 +1661,7 @@ export default function DocumentsPage() {
                 }
                 keepingWeakOcr={keepingWeakOcr}
                 onReupload={
-                  selectedDoc.status === "failed" &&
-                  selectedDoc.file_type !== "note"
+                  canReuploadDocument(selectedDoc)
                     ? () => openReupload(selectedDoc)
                     : undefined
                 }

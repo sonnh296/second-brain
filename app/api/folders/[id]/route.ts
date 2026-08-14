@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
+import { MAX_FOLDER_DESCRIPTION_LENGTH } from '@/lib/upload/file-types'
+
+const FOLDER_COLUMNS = 'id, parent_id, name, color, description, created_at, updated_at'
 
 const UpdateFolderSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(MAX_FOLDER_DESCRIPTION_LENGTH).nullable().optional(),
   parent_id: z.string().uuid().nullable().optional(),
   color: z
     .string()
@@ -64,7 +68,7 @@ export async function GET(
 
   const { data: folder } = await supabase
     .from('folders')
-    .select('id, parent_id, name, color, created_at, updated_at')
+    .select(FOLDER_COLUMNS)
     .eq('id', id)
     .eq('user_id', user.id)
     .single()
@@ -113,6 +117,9 @@ export async function PATCH(
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (parsed.data.name !== undefined) updates.name = parsed.data.name
+  if (parsed.data.description !== undefined) {
+    updates.description = parsed.data.description?.trim() || null
+  }
   if (parsed.data.color !== undefined) updates.color = parsed.data.color
 
   if (parsed.data.parent_id !== undefined) {
@@ -143,7 +150,7 @@ export async function PATCH(
     .update(updates)
     .eq('id', id)
     .eq('user_id', user.id)
-    .select('id, parent_id, name, color, created_at, updated_at')
+    .select(FOLDER_COLUMNS)
     .single()
 
   if (error) {

@@ -19,6 +19,7 @@ import {
 } from '@/lib/upload-limits'
 import { detectAndValidateFileType } from '@/lib/upload/validate-file'
 import { deleteByDocument, ensureCollection } from '@/lib/vector'
+import { canReuploadDocument } from '@/lib/documents/can-reupload'
 import { logger } from '@/lib/logger'
 
 async function clearReplacement(
@@ -66,7 +67,7 @@ export async function POST(
   const { data: doc } = await supabase
     .from('documents')
     .select(
-      'id, status, r2_key, file_size_bytes, replacement_r2_key, replacement_filename, replacement_size_bytes'
+      'id, status, file_type, r2_key, file_size_bytes, error_message, replacement_r2_key, replacement_filename, replacement_size_bytes'
     )
     .eq('id', documentId)
     .eq('user_id', userId)
@@ -75,9 +76,9 @@ export async function POST(
   if (!doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
   }
-  if (doc.status !== 'failed') {
+  if (!canReuploadDocument(doc)) {
     return NextResponse.json(
-      { error: 'Tài liệu không còn ở trạng thái lỗi' },
+      { error: 'Tài liệu không còn ở trạng thái có thể tải lại' },
       { status: 409 }
     )
   }
@@ -198,7 +199,6 @@ export async function POST(
     })
     .eq('id', documentId)
     .eq('user_id', userId)
-    .eq('status', 'failed')
     .eq('replacement_r2_key', replacementKey)
     .select('id')
     .maybeSingle()

@@ -51,6 +51,9 @@ export function FolderGridItem({
       <div className="flex flex-col items-center text-center gap-2">
         <Folder className="h-10 w-10" style={{ color: folder.color }} />
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{folder.name}</p>
+        {folder.description && (
+          <p className="text-[10px] text-muted-foreground line-clamp-2 w-full">{folder.description}</p>
+        )}
       </div>
       <button
         type="button"
@@ -120,7 +123,12 @@ export function FolderListItem({
     >
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
-      <p className="text-sm font-medium truncate flex-1">{folder.name}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">{folder.name}</p>
+        {folder.description && (
+          <p className="text-xs text-muted-foreground truncate">{folder.description}</p>
+        )}
+      </div>
       <button
         type="button"
         className="text-xs hover:underline shrink-0 cursor-pointer"

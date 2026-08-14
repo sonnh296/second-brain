@@ -11,6 +11,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   sanitizeFilename,
 } from '@/lib/upload-limits'
+import { canReuploadDocument } from '@/lib/documents/can-reupload'
 import { mimeForType, typeFromExtension } from '@/lib/upload/file-types'
 import { getIngestionQueue, ingestionJobId } from '@/lib/queue'
 import { logger } from '@/lib/logger'
@@ -78,7 +79,7 @@ export async function POST(
   const { data: doc } = await supabase
     .from('documents')
     .select(
-      'id, status, file_type, file_size_bytes, replacement_r2_key'
+      'id, status, file_type, file_size_bytes, error_message, replacement_r2_key'
     )
     .eq('id', documentId)
     .eq('user_id', userId)
@@ -87,16 +88,10 @@ export async function POST(
   if (!doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
   }
-  if (doc.status !== 'failed') {
+  if (!canReuploadDocument(doc)) {
     return NextResponse.json(
-      { error: 'Chỉ có thể tải lại tài liệu đang lỗi' },
+      { error: 'Chỉ có thể tải lại tài liệu đang lỗi hoặc ảnh OCR yếu' },
       { status: 409 }
-    )
-  }
-  if (doc.file_type === 'note') {
-    return NextResponse.json(
-      { error: 'Ghi chú không hỗ trợ tải lại file' },
-      { status: 400 }
     )
   }
 
@@ -152,7 +147,6 @@ export async function POST(
     })
     .eq('id', documentId)
     .eq('user_id', userId)
-    .eq('status', 'failed')
     .select('id')
     .maybeSingle()
   if (updateError || !staged) {
