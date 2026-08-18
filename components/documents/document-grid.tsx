@@ -108,9 +108,11 @@ export function DriveGridItem({
   doc,
   selected,
   onOpen,
+  onSelect,
   onEdit,
   onDelete,
   onToggleFavorite,
+  onDragStart,
   fileIcon,
   busy,
   busyLabel = 'Đang xóa...',
@@ -118,9 +120,11 @@ export function DriveGridItem({
   doc: Document
   selected: boolean
   onOpen: () => void
+  onSelect?: (docId: string, e: React.MouseEvent) => void
   onEdit?: () => void
   onDelete: () => void
   onToggleFavorite?: () => void
+  onDragStart?: (e: React.DragEvent) => void
   fileIcon: React.ReactNode
   busy?: boolean
   busyLabel?: string
@@ -131,7 +135,14 @@ export function DriveGridItem({
       className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 ${
         selected ? 'ring-2 ring-primary border-primary/50' : ''
       } ${busy ? 'pointer-events-none opacity-90' : ''}`}
-      onClick={busy ? undefined : onOpen}
+      draggable={Boolean(onDragStart)}
+      onDragStart={onDragStart}
+      onClick={(e) => {
+        if (busy) return
+        if (onSelect) onSelect(doc.id, e)
+        else onOpen()
+      }}
+      onDoubleClick={() => onOpen()}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
       {onToggleFavorite && (
@@ -202,9 +213,11 @@ export function DriveListItem({
   doc,
   selected,
   onOpen,
+  onSelect,
   onEdit,
   onDelete,
   onToggleFavorite,
+  onDragStart,
   fileIcon,
   formatBytes,
   busy,
@@ -213,9 +226,11 @@ export function DriveListItem({
   doc: Document
   selected: boolean
   onOpen: () => void
+  onSelect?: (docId: string, e: React.MouseEvent) => void
   onEdit?: () => void
   onDelete: () => void
   onToggleFavorite?: () => void
+  onDragStart?: (e: React.DragEvent) => void
   fileIcon: React.ReactNode
   formatBytes: (bytes: number) => string
   busy?: boolean
@@ -226,7 +241,14 @@ export function DriveListItem({
       className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 ${
         selected ? 'bg-primary/5 border-primary/40' : 'bg-card'
       } ${busy ? 'pointer-events-none opacity-90' : ''}`}
-      onClick={busy ? undefined : onOpen}
+      draggable={Boolean(onDragStart)}
+      onDragStart={onDragStart}
+      onClick={(e) => {
+        if (busy) return
+        if (onSelect) onSelect(doc.id, e)
+        else onOpen()
+      }}
+      onDoubleClick={() => onOpen()}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
       {onToggleFavorite && (

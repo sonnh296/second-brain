@@ -50,6 +50,7 @@ import {
   FolderGridItem,
   FolderListItem,
   FolderBreadcrumb,
+  FolderPicker,
 } from "@/components/documents/folder-items";
 import { useDocumentPolling } from "@/hooks/use-document-polling";
 import { useTrash } from "@/hooks/use-trash";
@@ -166,6 +167,11 @@ export default function DocumentsPage() {
   const [reprocessingOcr, setReprocessingOcr] = useState(false);
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
+  const [movingDocs, setMovingDocs] = useState(false);
+  const [moveError, setMoveError] = useState("");
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [noteModal, setNoteModal] = useState<NoteModalState | null>(null);
@@ -293,8 +299,22 @@ export default function DocumentsPage() {
     return refreshFolderView(currentFolderId);
   }, [refreshFolderView, currentFolderId]);
 
-  const { trashDocs, trashLoading, trashAction, restoreDoc, purgeDoc } =
+  const { trashDocs, trashLoading, trashAction, restoreDoc, purgeDoc, fetchTrash } =
     useTrash(trashMode, confirm, onTrashRestored);
+
+  useEffect(() => {
+    // Switching trash mode should reset multi-selection to avoid confusing actions.
+    setSelectedDocIds([]);
+    setSelectedDoc(null);
+    setPreview(null);
+  }, [trashMode]);
+
+  useEffect(() => {
+    // Switching filters/folder changes the visible dataset.
+    setSelectedDocIds([]);
+    setSelectedDoc(null);
+    setPreview(null);
+  }, [currentFolderId, typeFilter, statusFilter, searchQuery]);
 
   // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
   useEffect(() => {
@@ -319,6 +339,7 @@ export default function DocumentsPage() {
   function navigateToFolder(folderId: string | null) {
     setCurrentFolderId(folderId);
     closePreview();
+    setSelectedDocIds([]);
     setLoading(true);
   }
 
@@ -657,6 +678,7 @@ export default function DocumentsPage() {
   }
 
   async function openDocument(doc: Document) {
+    setSelectedDocIds([doc.id])
     setSelectedDoc(doc);
     setPreviewLoading(true);
     setPreview(null);
@@ -665,10 +687,137 @@ export default function DocumentsPage() {
     setPreviewLoading(false);
   }
 
+  function selectDocument(doc: Document, e: React.MouseEvent) {
+    // Single click: select (Google Drive-like). Preview opens on double click.
+    const multi = e.metaKey || e.ctrlKey || e.shiftKey
+    setPreview(null)
+    setPreviewLoading(false)
+    setSelectedDoc(null)
+
+    setSelectedDocIds((prev) => {
+      if (multi) {
+        if (prev.includes(doc.id)) return prev.filter((id) => id !== doc.id)
+        return [...prev, doc.id]
+      }
+      return [doc.id]
+    })
+  }
+
   function closePreview() {
     setSelectedDoc(null);
     setPreview(null);
   }
+
+  function handleDocDragStart(doc: Document, e: React.DragEvent) {
+    // Drag payload contains selected IDs so dropping on a folder moves all at once.
+    const idsToDrag =
+      selectedDocIds.length > 0 && selectedDocIds.includes(doc.id)
+        ? selectedDocIds
+        : [doc.id]
+
+    if (!selectedDocIds.includes(doc.id)) {
+      setSelectedDocIds([doc.id])
+    }
+
+    e.dataTransfer.setData("application/x-doc-ids", JSON.stringify(idsToDrag))
+    e.dataTransfer.effectAllowed = "move"
+    // Avoid leaving the preview open when user starts dragging.
+    setPreview(null)
+    setSelectedDoc(null)
+  }
+
+  async function moveDocsToFolder(folderId: string | null, docIds: string[]) {
+    if (docIds.length === 0) return
+    setMovingDocs(true)
+    setMoveError("")
+    try {
+      const results = await Promise.all(
+        docIds.map(async (id) => {
+          const res = await fetch(`/api/documents/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder_id: folderId }),
+          })
+          return { id, ok: res.ok, error: await res.json().catch(() => null) }
+        }),
+      )
+      const failed = results.filter((r) => !r.ok)
+      if (failed.length > 0) {
+        setMoveError(`Không thể di chuyển ${failed.length} tài liệu`)
+        return
+      }
+
+      setSelectedDocIds([])
+      closePreview()
+      await refreshFolderView(currentFolderId)
+    } finally {
+      setMovingDocs(false)
+    }
+  }
+
+  async function moveSelectedDocsFromDialog() {
+    setMoveDialogOpen(false)
+    await moveDocsToFolder(moveTargetFolderId, selectedDocIds)
+  }
+
+  async function bulkDeleteSelectedDocs() {
+    if (selectedDocIds.length === 0) return
+    setMoveError("")
+    const ids = [...selectedDocIds]
+
+    if (!trashMode) {
+      const ok = await confirm({
+        title: `Xóa ${ids.length} tài liệu?`,
+        description: "Tài liệu sẽ được chuyển vào thùng rác.",
+        confirmLabel: "Xóa vào thùng rác",
+      })
+      if (!ok) return
+
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/documents/${id}`, { method: "DELETE" }).then((r) => r.ok),
+        ),
+      )
+      setSelectedDocIds([])
+      closePreview()
+      await refreshFolderView(currentFolderId)
+      return
+    }
+
+    // Trash mode: restore or permanently purge.
+    const ok = await confirm({
+      title: `Xóa vĩnh viễn ${ids.length} tài liệu?`,
+      description: "Không thể khôi phục sau khi xóa.",
+      confirmLabel: "Xóa vĩnh viễn",
+    })
+    if (!ok) return
+
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/documents/${id}?permanent=1`, { method: "DELETE" }),
+      ),
+    )
+    setSelectedDocIds([])
+    closePreview()
+    await fetchTrash()
+  }
+
+  async function bulkRestoreSelectedDocs() {
+    if (selectedDocIds.length === 0) return
+    const ids = [...selectedDocIds]
+    const ok = await confirm({
+      title: `Khôi phục ${ids.length} tài liệu?`,
+      description: "Tài liệu sẽ được đưa về lại thư viện.",
+      confirmLabel: "Khôi phục",
+    })
+    if (!ok) return
+
+    await Promise.all(ids.map((id) => fetch(`/api/documents/${id}/restore`, { method: "POST" })))
+    setSelectedDocIds([])
+    closePreview()
+    await fetchTrash()
+  }
+
 
   async function saveName() {
     if (!selectedDoc) return;
@@ -947,6 +1096,46 @@ export default function DocumentsPage() {
           )}
         </form>
       </Dialog>
+
+      <Dialog
+        open={moveDialogOpen}
+        title={`Di chuyển (${selectedDocIds.length})`}
+        onClose={() => !movingDocs && setMoveDialogOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={movingDocs}
+              onClick={() => setMoveDialogOpen(false)}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={movingDocs}
+              onClick={() => void moveSelectedDocsFromDialog()}
+            >
+              {movingDocs ? "Đang di chuyển..." : tc("save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FolderPicker
+            folders={allFolders}
+            value={moveTargetFolderId}
+            onChange={(folderId) => setMoveTargetFolderId(folderId)}
+          />
+          {moveError && <p className="text-sm text-destructive">{moveError}</p>}
+          <p className="text-xs text-muted-foreground">
+            Thả tài liệu vào một thư mục cũng sẽ di chuyển chúng.
+          </p>
+        </div>
+      </Dialog>
+
       {sidebarOpen && (
         <button
           type="button"
@@ -1225,6 +1414,69 @@ export default function DocumentsPage() {
               </div>
             )}
           </div>
+
+          {selectedDocIds.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground">
+                {selectedDocIds.length} đã chọn
+              </span>
+
+              {!trashMode ? (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={movingDocs}
+                    onClick={() => {
+                      setMoveTargetFolderId(currentFolderId);
+                      setMoveDialogOpen(true);
+                    }}
+                  >
+                    <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
+                    Di chuyển
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={movingDocs}
+                    onClick={() => void bulkDeleteSelectedDocs()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                    Xóa
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={movingDocs}
+                    onClick={() => void bulkRestoreSelectedDocs()}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                    Khôi phục
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9"
+                    disabled={movingDocs}
+                    onClick={() => void bulkDeleteSelectedDocs()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                    Xóa vĩnh viễn
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="ml-auto shrink-0">
             <Button
@@ -1547,6 +1799,9 @@ export default function DocumentsPage() {
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
                             onRename={() => openRenameFolder(folder)}
+                            onDropDocs={(folderId, docIds) =>
+                              void moveDocsToFolder(folderId, docIds)
+                            }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                           />
@@ -1560,6 +1815,9 @@ export default function DocumentsPage() {
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
                             onRename={() => openRenameFolder(folder)}
+                            onDropDocs={(folderId, docIds) =>
+                              void moveDocsToFolder(folderId, docIds)
+                            }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                           />
@@ -1579,8 +1837,9 @@ export default function DocumentsPage() {
                           <DriveGridItem
                             key={doc.id}
                             doc={doc}
-                            selected={selectedDoc?.id === doc.id}
+                            selected={selectedDocIds.includes(doc.id)}
                             onOpen={() => openDocument(doc)}
+                            onSelect={(docId, e) => selectDocument(doc, e)}
                             onEdit={
                               doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)
@@ -1588,6 +1847,7 @@ export default function DocumentsPage() {
                             }
                             onDelete={() => handleDelete(doc.id)}
                             onToggleFavorite={() => void toggleFavorite(doc)}
+                            onDragStart={(e) => handleDocDragStart(doc, e)}
                             fileIcon={<FileIcon type={doc.file_type} />}
                             busy={deletingDocIds.includes(doc.id)}
                           />
@@ -1599,8 +1859,9 @@ export default function DocumentsPage() {
                           <DriveListItem
                             key={doc.id}
                             doc={doc}
-                            selected={selectedDoc?.id === doc.id}
+                            selected={selectedDocIds.includes(doc.id)}
                             onOpen={() => openDocument(doc)}
+                            onSelect={(docId, e) => selectDocument(doc, e)}
                             onEdit={
                               doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)
@@ -1612,6 +1873,7 @@ export default function DocumentsPage() {
                               <FileIcon type={doc.file_type} size="sm" />
                             }
                             formatBytes={formatBytes}
+                            onDragStart={(e) => handleDocDragStart(doc, e)}
                             busy={deletingDocIds.includes(doc.id)}
                           />
                         ))}
