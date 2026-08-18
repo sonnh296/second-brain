@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { deleteObject } from '@/lib/storage'
 import { deleteByDocument } from '@/lib/vector'
 import { enqueueDocumentCleanupJob } from '@/lib/queue'
+import { documentThumbnailKey } from '@/lib/storage/thumbnail-key'
 import { logger } from '@/lib/logger'
 
 function isStoredFileKey(r2Key: string): boolean {
@@ -43,6 +44,8 @@ export async function hardDeleteDocument(
       failures.push('r2')
     }
   }
+
+  await deleteObject(documentThumbnailKey(userId, doc.id)).catch(() => {})
 
   const { error: pgErr } = await supabase
     .from('documents')

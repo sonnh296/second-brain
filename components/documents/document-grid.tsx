@@ -5,6 +5,7 @@ import { MoreVertical, Star } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TagBadge } from '@/components/documents/tag-manager'
+import { isImageType } from '@/lib/upload/file-types'
 import type { Document } from '@/lib/db/types'
 
 type DocStatus = Document['status']
@@ -74,6 +75,35 @@ function FavoriteButton({
   )
 }
 
+export function DocumentThumb({
+  doc,
+  fallback,
+  className,
+}: {
+  doc: Document
+  fallback: React.ReactNode
+  className: string
+}) {
+  const [failed, setFailed] = useState(false)
+  const showThumb =
+    isImageType(doc.file_type) &&
+    doc.status !== 'pending' &&
+    doc.status !== 'processing' &&
+    !failed
+
+  if (!showThumb) return fallback
+
+  return (
+    <img
+      src={`/api/documents/${doc.id}/download?thumb=1`}
+      alt=""
+      className={className}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 export function DriveGridItem({
   doc,
   selected,
@@ -110,7 +140,11 @@ export function DriveGridItem({
         </div>
       )}
       <div className="flex flex-col items-center text-center gap-2">
-        {fileIcon}
+        <DocumentThumb
+          doc={doc}
+          fallback={fileIcon}
+          className="h-24 w-full rounded-md border bg-muted/40 object-cover"
+        />
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{doc.filename}</p>
         {doc.description && (
           <p className="text-[10px] text-muted-foreground line-clamp-1 w-full">{doc.description}</p>
@@ -198,7 +232,11 @@ export function DriveListItem({
       {onToggleFavorite && (
         <FavoriteButton favorited={Boolean(doc.is_favorite)} onToggle={onToggleFavorite} />
       )}
-      {fileIcon}
+      <DocumentThumb
+        doc={doc}
+        fallback={fileIcon}
+        className="h-10 w-10 shrink-0 rounded-md border bg-muted/40 object-cover"
+      />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{doc.filename}</p>
         {doc.description && (

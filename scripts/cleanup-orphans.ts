@@ -9,6 +9,7 @@ import { scrollDocumentReferences, deleteByDocument } from '../lib/vector'
 import { listObjectKeys, deleteObject } from '../lib/storage'
 import { getIngestionQueue } from '../lib/queue'
 import { logger } from '../lib/logger'
+import { documentThumbnailKey } from '../lib/storage/thumbnail-key'
 
 validateServerEnv()
 
@@ -53,6 +54,7 @@ async function main() {
     docs
       .flatMap((d) => [
         d.r2_key,
+        documentThumbnailKey(d.user_id, d.id),
         isActiveReplacement(d.replacement_started_at)
           ? d.replacement_r2_key
           : null,

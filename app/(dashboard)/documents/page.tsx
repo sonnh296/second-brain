@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import {
   DriveGridItem,
   DriveListItem,
+  DocumentThumb,
 } from "@/components/documents/document-grid";
 import { DocumentPreviewPanel } from "@/components/documents/document-preview-panel";
 import { NoteModal } from "@/components/documents/note-modal";
@@ -1440,7 +1441,11 @@ export default function DocumentsPage() {
                               </div>
                             </div>
                           )}
-                          <FileIcon type={doc.file_type} size="sm" />
+                          <DocumentThumb
+                            doc={doc}
+                            fallback={<FileIcon type={doc.file_type} size="sm" />}
+                            className="h-10 w-10 shrink-0 rounded-md border bg-muted/40 object-cover"
+                          />
                           <div className="min-w-0 flex-1">
                             <p className="text-sm truncate">{doc.filename}</p>
                             <p className="text-xs text-muted-foreground">

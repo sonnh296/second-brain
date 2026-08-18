@@ -2,6 +2,7 @@ import { deleteObject } from '../storage'
 import { deleteByDocument } from '../vector'
 import { logger } from '../logger'
 import type { DocumentCleanupJobData } from '../queue'
+import { documentThumbnailKey } from '../storage/thumbnail-key'
 
 function isStoredFileKey(r2Key: string): boolean {
   return r2Key !== 'pending' && r2Key !== 'note' && !r2Key.startsWith('notes/')
@@ -50,6 +51,8 @@ export async function runDocumentCleanup(data: DocumentCleanupJobData): Promise<
       failures.push('r2')
     }
   }
+
+  await deleteObject(documentThumbnailKey(user_id, document_id)).catch(() => {})
 
   if (failures.length > 0) {
     throw new Error(`Document cleanup incomplete: ${failures.join(', ')}`)

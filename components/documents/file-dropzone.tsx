@@ -1,10 +1,18 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Upload, File as FileIcon, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { UPLOAD_ACCEPT } from '@/lib/upload/file-types'
+
+const IMAGE_PREVIEW_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+])
 
 interface FileDropzoneProps {
   disabled?: boolean
@@ -15,6 +23,17 @@ interface FileDropzoneProps {
 export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!selectedFile || !IMAGE_PREVIEW_TYPES.has(selectedFile.type)) {
+      setImagePreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(selectedFile)
+    setImagePreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [selectedFile])
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -80,7 +99,16 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
 
         {selectedFile ? (
           <>
-            <FileIcon className="h-8 w-8 text-primary shrink-0" />
+            {imagePreviewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imagePreviewUrl}
+                alt={selectedFile.name}
+                className="max-h-48 w-auto max-w-full rounded-md border object-contain bg-muted/40"
+              />
+            ) : (
+              <FileIcon className="h-8 w-8 text-primary shrink-0" />
+            )}
             <p className="text-sm font-medium text-center break-all px-2 max-w-2xl">
               {selectedFile.name}
             </p>

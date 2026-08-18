@@ -16,6 +16,10 @@ import { OCR_WEAK_CONTENT_MESSAGE } from './ocr-status'
 import { transcribeMediaFile, isTranscriptionEnabled } from './transcribe'
 import { upsertChunks, ensureCollection, deleteByDocument, listChunksByDocument } from '../vector'
 import { downloadToFile } from '../storage'
+import {
+  canMakeImageThumbnail,
+  storeDocumentThumbnailFromFile,
+} from './thumbnail'
 import { createServiceSupabaseClient } from '../db/server'
 import { logger } from '../logger'
 
@@ -307,6 +311,18 @@ export async function runIngestionPipeline(
           'Transcription chưa được bật (cần OPENAI_API_KEY / TRANSCRIPTION_ENABLED)'
         )
       }
+      if (canMakeImageThumbnail(fileType) && tempPath) {
+        try {
+          await downloadToFile(r2Key, tempPath)
+          await storeDocumentThumbnailFromFile(userId, documentId, tempPath)
+        } catch (err) {
+          logger.warn('Storage-only image thumbnail failed', {
+            err,
+            documentId,
+            userId,
+          })
+        }
+      }
       await markStorageOnlyDone(supabase, documentId)
       logger.info('Storage-only file marked done (no indexing)', {
         documentId,
@@ -342,6 +358,9 @@ export async function runIngestionPipeline(
           )
         }
         throw err
+      }
+      if (canMakeImageThumbnail(fileType) && tempPath) {
+        await storeDocumentThumbnailFromFile(userId, documentId, tempPath)
       }
       if (canOcr) {
         const ocr = await extractTextFromImage(tempPath!)
