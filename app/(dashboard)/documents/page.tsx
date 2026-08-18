@@ -62,6 +62,11 @@ import {
 } from "@/lib/upload/file-types";
 import { canReuploadDocument } from "@/lib/documents/can-reupload";
 import {
+  beginLibraryDocDrag,
+  endLibraryDocDrag,
+} from "@/lib/documents/library-drag";
+import { rangeSelectIds } from "@/lib/documents/selection";
+import {
   putToR2WithProgress,
   waitForDocumentProcessing,
 } from "@/lib/upload/put-with-progress";
@@ -168,6 +173,7 @@ export default function DocumentsPage() {
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const selectionAnchorIdRef = useRef<string | null>(null);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
   const [movingDocs, setMovingDocs] = useState(false);
@@ -305,6 +311,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     // Switching trash mode should reset multi-selection to avoid confusing actions.
     setSelectedDocIds([]);
+    selectionAnchorIdRef.current = null;
     setSelectedDoc(null);
     setPreview(null);
   }, [trashMode]);
@@ -312,6 +319,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     // Switching filters/folder changes the visible dataset.
     setSelectedDocIds([]);
+    selectionAnchorIdRef.current = null;
     setSelectedDoc(null);
     setPreview(null);
   }, [currentFolderId, typeFilter, statusFilter, searchQuery]);
@@ -340,6 +348,7 @@ export default function DocumentsPage() {
     setCurrentFolderId(folderId);
     closePreview();
     setSelectedDocIds([]);
+    selectionAnchorIdRef.current = null;
     setLoading(true);
   }
 
@@ -678,7 +687,8 @@ export default function DocumentsPage() {
   }
 
   async function openDocument(doc: Document) {
-    setSelectedDocIds([doc.id])
+    setSelectedDocIds([doc.id]);
+    selectionAnchorIdRef.current = doc.id;
     setSelectedDoc(doc);
     setPreviewLoading(true);
     setPreview(null);
@@ -688,19 +698,38 @@ export default function DocumentsPage() {
   }
 
   function selectDocument(doc: Document, e: React.MouseEvent) {
-    // Single click: select (Google Drive-like). Preview opens on double click.
-    const multi = e.metaKey || e.ctrlKey || e.shiftKey
-    setPreview(null)
-    setPreviewLoading(false)
-    setSelectedDoc(null)
+    // Single click: select. Shift+click: range. Ctrl/Cmd+click: toggle.
+    setPreview(null);
+    setPreviewLoading(false);
+    setSelectedDoc(null);
 
-    setSelectedDocIds((prev) => {
-      if (multi) {
-        if (prev.includes(doc.id)) return prev.filter((id) => id !== doc.id)
-        return [...prev, doc.id]
+    const orderedIds = filteredDocs.map((item) => item.id);
+
+    if (e.shiftKey) {
+      const range = rangeSelectIds(
+        orderedIds,
+        selectionAnchorIdRef.current,
+        doc.id,
+      );
+      if (e.metaKey || e.ctrlKey) {
+        setSelectedDocIds((prev) => Array.from(new Set([...prev, ...range])));
+      } else {
+        setSelectedDocIds(range);
       }
-      return [doc.id]
-    })
+      return;
+    }
+
+    if (e.metaKey || e.ctrlKey) {
+      setSelectedDocIds((prev) => {
+        if (prev.includes(doc.id)) return prev.filter((id) => id !== doc.id);
+        return [...prev, doc.id];
+      });
+      selectionAnchorIdRef.current = doc.id;
+      return;
+    }
+
+    setSelectedDocIds([doc.id]);
+    selectionAnchorIdRef.current = doc.id;
   }
 
   function closePreview() {
@@ -709,21 +738,23 @@ export default function DocumentsPage() {
   }
 
   function handleDocDragStart(doc: Document, e: React.DragEvent) {
-    // Drag payload contains selected IDs so dropping on a folder moves all at once.
     const idsToDrag =
       selectedDocIds.length > 0 && selectedDocIds.includes(doc.id)
         ? selectedDocIds
-        : [doc.id]
+        : [doc.id];
 
     if (!selectedDocIds.includes(doc.id)) {
-      setSelectedDocIds([doc.id])
+      setSelectedDocIds([doc.id]);
+      selectionAnchorIdRef.current = doc.id;
     }
 
-    e.dataTransfer.setData("application/x-doc-ids", JSON.stringify(idsToDrag))
-    e.dataTransfer.effectAllowed = "move"
-    // Avoid leaving the preview open when user starts dragging.
-    setPreview(null)
-    setSelectedDoc(null)
+    beginLibraryDocDrag(idsToDrag, e.dataTransfer);
+    setPreview(null);
+    setSelectedDoc(null);
+  }
+
+  function handleDocDragEnd() {
+    endLibraryDocDrag();
   }
 
   async function moveDocsToFolder(folderId: string | null, docIds: string[]) {
@@ -1848,6 +1879,7 @@ export default function DocumentsPage() {
                             onDelete={() => handleDelete(doc.id)}
                             onToggleFavorite={() => void toggleFavorite(doc)}
                             onDragStart={(e) => handleDocDragStart(doc, e)}
+                            onDragEnd={handleDocDragEnd}
                             fileIcon={<FileIcon type={doc.file_type} />}
                             busy={deletingDocIds.includes(doc.id)}
                           />
@@ -1874,6 +1906,7 @@ export default function DocumentsPage() {
                             }
                             formatBytes={formatBytes}
                             onDragStart={(e) => handleDocDragStart(doc, e)}
+                            onDragEnd={handleDocDragEnd}
                             busy={deletingDocIds.includes(doc.id)}
                           />
                         ))}

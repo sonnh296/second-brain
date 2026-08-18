@@ -1,9 +1,58 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Folder, MoreVertical, Pencil } from 'lucide-react'
 import type { Folder as FolderType } from '@/lib/db/types'
+import {
+  endLibraryDocDrag,
+  isLibraryDocDrag,
+  readLibraryDocIds,
+} from '@/lib/documents/library-drag'
+
+function useFolderDocDrop(onDropDocs?: (folderId: string, docIds: string[]) => void) {
+  const [dragOver, setDragOver] = useState(false)
+  const enterCount = useRef(0)
+
+  function resetDrag() {
+    enterCount.current = 0
+    setDragOver(false)
+  }
+
+  function onDragEnter(e: React.DragEvent) {
+    if (!onDropDocs || !isLibraryDocDrag(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    enterCount.current += 1
+    setDragOver(true)
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    if (!onDropDocs || !isLibraryDocDrag(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOver(true)
+  }
+
+  function onDragLeave() {
+    enterCount.current = Math.max(0, enterCount.current - 1)
+    if (enterCount.current === 0) setDragOver(false)
+  }
+
+  function onDrop(folderId: string, e: React.DragEvent) {
+    if (!onDropDocs) return
+    e.preventDefault()
+    e.stopPropagation()
+    resetDrag()
+    const docIds = readLibraryDocIds(e.dataTransfer)
+    endLibraryDocDrag()
+    if (docIds.length === 0) return
+    onDropDocs(folderId, docIds)
+  }
+
+  return { dragOver, onDragEnter, onDragOver, onDragLeave, onDrop }
+}
 
 function FolderBusyOverlay({ label }: { label: string }) {
   return (
@@ -40,46 +89,19 @@ export function FolderGridItem({
   busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
   const t = useTranslations('documents')
-
-  function getDocIdsFromDataTransfer(dt: DataTransfer): string[] | null {
-    const raw = dt.getData('application/x-doc-ids')
-    if (!raw) return null
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (Array.isArray(parsed)) {
-        return parsed.filter((x) => typeof x === 'string') as string[]
-      }
-    } catch {
-      return null
-    }
-    return null
-  }
+  const drop = useFolderDocDrop(onDropDocs)
 
   return (
     <div
       className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-amber-500/40 ${
         busy ? 'pointer-events-none opacity-90' : ''
-      } ${dragOver ? 'ring-2 ring-primary' : ''}`}
+      } ${drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
       onClick={busy ? undefined : onOpen}
-      onDragOver={(e) => {
-        if (!onDropDocs) return
-        const docIds = getDocIdsFromDataTransfer(e.dataTransfer)
-        if (!docIds) return
-        e.preventDefault()
-        setDragOver(true)
-        e.dataTransfer.dropEffect = 'move'
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        if (!onDropDocs) return
-        e.preventDefault()
-        setDragOver(false)
-        const docIds = getDocIdsFromDataTransfer(e.dataTransfer)
-        if (!docIds || docIds.length === 0) return
-        onDropDocs(folder.id, docIds)
-      }}
+      onDragEnter={drop.onDragEnter}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={(e) => drop.onDrop(folder.id, e)}
     >
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <div className="flex flex-col items-center text-center gap-2">
@@ -149,39 +171,18 @@ export function FolderListItem({
   busyLabel?: string
 }) {
   const t = useTranslations('documents')
-  const [dragOver, setDragOver] = useState(false)
+  const drop = useFolderDocDrop(onDropDocs)
 
   return (
     <div
       className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card ${
         busy ? 'pointer-events-none opacity-90' : ''
-      } ${dragOver ? 'ring-2 ring-primary' : ''}`}
+      } ${drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
       onClick={busy ? undefined : onOpen}
-      onDragOver={(e) => {
-        if (!onDropDocs) return
-        const raw = e.dataTransfer.getData('application/x-doc-ids')
-        if (!raw) return
-        e.preventDefault()
-        setDragOver(true)
-        e.dataTransfer.dropEffect = 'move'
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        if (!onDropDocs) return
-        e.preventDefault()
-        setDragOver(false)
-        const raw = e.dataTransfer.getData('application/x-doc-ids')
-        if (!raw) return
-        try {
-          const parsed = JSON.parse(raw) as unknown
-          if (!Array.isArray(parsed)) return
-          const docIds = parsed.filter((x) => typeof x === 'string') as string[]
-          if (docIds.length === 0) return
-          onDropDocs(folder.id, docIds)
-        } catch {
-          return
-        }
-      }}
+      onDragEnter={drop.onDragEnter}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={(e) => drop.onDrop(folder.id, e)}
     >
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
