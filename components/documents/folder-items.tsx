@@ -77,6 +77,9 @@ export function FolderGridItem({
   onRename,
   onDropDocs,
   onDelete,
+  selectionMode,
+  selected,
+  onSelect,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
@@ -85,19 +88,79 @@ export function FolderGridItem({
   onRename: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
   onDelete: () => void
+  selectionMode?: boolean
+  selected?: boolean
+  onSelect?: (folderId: string) => void
   busy?: boolean
   busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const t = useTranslations('documents')
   const drop = useFolderDocDrop(onDropDocs)
+  const pressTimerRef = useRef<number | null>(null)
+  const suppressClickRef = useRef(false)
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  function cancelPress() {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current)
+      pressTimerRef.current = null
+    }
+  }
+
+  function startPress(e: React.PointerEvent) {
+    if (!onSelect || busy) return
+    // Avoid starting long-press from buttons/links inside the card.
+    const el = e.target as HTMLElement | null
+    if (el?.closest('button,a,input,select,textarea,[role="menuitem"]')) return
+
+    suppressClickRef.current = false
+    pressStartRef.current = { x: e.clientX, y: e.clientY }
+    cancelPress()
+
+    pressTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = true
+      setMenuOpen(false)
+      onSelect(folder.id)
+      pressTimerRef.current = null
+    }, 520)
+  }
 
   return (
     <div
       className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-amber-500/40 ${
         busy ? 'pointer-events-none opacity-90' : ''
-      } ${drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-      onClick={busy ? undefined : onOpen}
+      } ${selected ? 'ring-2 ring-primary/70 border-primary/50' : ''} ${
+        drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''
+      }`}
+      onPointerDown={(e) => startPress(e)}
+      onPointerUp={() => cancelPress()}
+      onPointerCancel={() => cancelPress()}
+      onPointerLeave={() => cancelPress()}
+      onPointerMove={(e) => {
+        const start = pressStartRef.current
+        if (!start) return
+        const dx = Math.abs(e.clientX - start.x)
+        const dy = Math.abs(e.clientY - start.y)
+        if (dx + dy > 10) cancelPress()
+      }}
+      onClick={
+        busy
+          ? undefined
+          : (e) => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false
+                return
+              }
+              if (selectionMode) {
+                e.preventDefault()
+                e.stopPropagation()
+                onSelect?.(folder.id)
+                return
+              }
+              onOpen()
+            }
+      }
       onDragEnter={drop.onDragEnter}
       onDragOver={drop.onDragOver}
       onDragLeave={drop.onDragLeave}
@@ -159,6 +222,9 @@ export function FolderListItem({
   onRename,
   onDropDocs,
   onDelete,
+  selectionMode,
+  selected,
+  onSelect,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
@@ -167,18 +233,76 @@ export function FolderListItem({
   onRename: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
   onDelete: () => void
+  selectionMode?: boolean
+  selected?: boolean
+  onSelect?: (folderId: string) => void
   busy?: boolean
   busyLabel?: string
 }) {
   const t = useTranslations('documents')
   const drop = useFolderDocDrop(onDropDocs)
+  const pressTimerRef = useRef<number | null>(null)
+  const suppressClickRef = useRef(false)
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  function cancelPress() {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current)
+      pressTimerRef.current = null
+    }
+  }
+
+  function startPress(e: React.PointerEvent) {
+    if (!onSelect || busy) return
+    const el = e.target as HTMLElement | null
+    if (el?.closest('button,a,input,select,textarea,[role="menuitem"]')) return
+
+    suppressClickRef.current = false
+    pressStartRef.current = { x: e.clientX, y: e.clientY }
+    cancelPress()
+
+    pressTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = true
+      onSelect(folder.id)
+      pressTimerRef.current = null
+    }, 520)
+  }
 
   return (
     <div
       className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card ${
         busy ? 'pointer-events-none opacity-90' : ''
-      } ${drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-      onClick={busy ? undefined : onOpen}
+      } ${selected ? 'ring-2 ring-primary/70 border-primary/50' : ''} ${
+        drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''
+      }`}
+      onPointerDown={(e) => startPress(e)}
+      onPointerUp={() => cancelPress()}
+      onPointerCancel={() => cancelPress()}
+      onPointerLeave={() => cancelPress()}
+      onPointerMove={(e) => {
+        const start = pressStartRef.current
+        if (!start) return
+        const dx = Math.abs(e.clientX - start.x)
+        const dy = Math.abs(e.clientY - start.y)
+        if (dx + dy > 10) cancelPress()
+      }}
+      onClick={
+        busy
+          ? undefined
+          : (e) => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false
+                return
+              }
+              if (selectionMode) {
+                e.preventDefault()
+                e.stopPropagation()
+                onSelect?.(folder.id)
+                return
+              }
+              onOpen()
+            }
+      }
       onDragEnter={drop.onDragEnter}
       onDragOver={drop.onDragOver}
       onDragLeave={drop.onDragLeave}

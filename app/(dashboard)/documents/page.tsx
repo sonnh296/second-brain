@@ -173,6 +173,8 @@ export default function DocumentsPage() {
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [folderSelectionMode, setFolderSelectionMode] = useState(false);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const selectionAnchorIdRef = useRef<string | null>(null);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
@@ -324,6 +326,38 @@ export default function DocumentsPage() {
     setPreview(null);
   }, [currentFolderId, typeFilter, statusFilter, searchQuery]);
 
+  useEffect(() => {
+    if (!folderSelectionMode) return
+    // If user deselects everything, exit selection mode.
+    if (selectedFolderIds.length === 0) setFolderSelectionMode(false)
+  }, [folderSelectionMode, selectedFolderIds.length])
+
+  useEffect(() => {
+    if (!folderSelectionMode) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setFolderSelectionMode(false)
+        setSelectedFolderIds([])
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [folderSelectionMode])
+
+  function toggleFolderSelection(folderId: string) {
+    setFolderSelectionMode(true)
+    setSelectedFolderIds((prev) => {
+      if (prev.includes(folderId)) return prev.filter((id) => id !== folderId)
+      return [...prev, folderId]
+    })
+    // Ensure we don't have doc + folder multi-select at the same time.
+    setSelectedDocIds([])
+    setSelectedDoc(null)
+    setPreview(null)
+    setPreviewLoading(false)
+    selectionAnchorIdRef.current = null
+  }
+
   // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
   useEffect(() => {
     if (!selectedDoc) return;
@@ -349,6 +383,8 @@ export default function DocumentsPage() {
     closePreview();
     setSelectedDocIds([]);
     selectionAnchorIdRef.current = null;
+    setFolderSelectionMode(false);
+    setSelectedFolderIds([]);
     setLoading(true);
   }
 
@@ -428,6 +464,37 @@ export default function DocumentsPage() {
       else await refreshFolderView(currentFolderId);
     } finally {
       unmarkDeletingFolder(folderId);
+    }
+  }
+
+  async function bulkDeleteSelectedFolders() {
+    if (selectedFolderIds.length === 0) return
+    const ids = [...selectedFolderIds]
+
+    const ok = await confirm({
+      title: `Xóa ${ids.length} thư mục?`,
+      description: "Tài liệu bên trong sẽ chuyển về thư mục gốc.",
+      confirmLabel: "Xóa thư mục",
+    })
+    if (!ok) return
+
+    setDeletingFolderIds((prev) => Array.from(new Set([...prev, ...ids])))
+    try {
+      await Promise.all(ids.map((id) => fetch(`/api/folders/${id}`, { method: "DELETE" })))
+
+      setSelectedFolderIds([])
+      setFolderSelectionMode(false)
+      closePreview()
+      setSelectedDocIds([])
+      selectionAnchorIdRef.current = null
+
+      if (currentFolderId && ids.includes(currentFolderId)) {
+        navigateToFolder(null)
+      } else {
+        await refreshFolderView(currentFolderId)
+      }
+    } finally {
+      setDeletingFolderIds((prev) => prev.filter((id) => !ids.includes(id)))
     }
   }
 
@@ -688,6 +755,8 @@ export default function DocumentsPage() {
 
   async function openDocument(doc: Document) {
     setSelectedDocIds([doc.id]);
+    setFolderSelectionMode(false);
+    setSelectedFolderIds([]);
     selectionAnchorIdRef.current = doc.id;
     setSelectedDoc(doc);
     setPreviewLoading(true);
@@ -699,6 +768,8 @@ export default function DocumentsPage() {
 
   function selectDocument(doc: Document, e: React.MouseEvent) {
     // Single click: select. Shift+click: range. Ctrl/Cmd+click: toggle.
+    setFolderSelectionMode(false);
+    setSelectedFolderIds([]);
     setPreview(null);
     setPreviewLoading(false);
     setSelectedDoc(null);
@@ -748,6 +819,8 @@ export default function DocumentsPage() {
       selectionAnchorIdRef.current = doc.id;
     }
 
+    setFolderSelectionMode(false);
+    setSelectedFolderIds([]);
     beginLibraryDocDrag(idsToDrag, e.dataTransfer);
     setPreview(null);
     setSelectedDoc(null);
@@ -1446,7 +1519,35 @@ export default function DocumentsPage() {
             )}
           </div>
 
-          {selectedDocIds.length > 0 && (
+          {selectedFolderIds.length > 0 ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-muted-foreground">
+                {selectedFolderIds.length} đã chọn
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9"
+                disabled={deletingFolderIds.length > 0}
+                onClick={() => void bulkDeleteSelectedFolders()}
+              >
+                Xóa
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-9"
+                onClick={() => {
+                  setFolderSelectionMode(false);
+                  setSelectedFolderIds([]);
+                }}
+              >
+                Hủy
+              </Button>
+            </div>
+          ) : selectedDocIds.length > 0 ? (
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-xs text-muted-foreground">
                 {selectedDocIds.length} đã chọn
@@ -1507,7 +1608,7 @@ export default function DocumentsPage() {
                 </>
               )}
             </div>
-          )}
+          ) : null}
 
           <div className="ml-auto shrink-0">
             <Button
@@ -1835,6 +1936,9 @@ export default function DocumentsPage() {
                             }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
+                            selectionMode={folderSelectionMode}
+                            selected={selectedFolderIds.includes(folder.id)}
+                            onSelect={toggleFolderSelection}
                           />
                         ))}
                       </div>
@@ -1851,6 +1955,9 @@ export default function DocumentsPage() {
                             }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
+                            selectionMode={folderSelectionMode}
+                            selected={selectedFolderIds.includes(folder.id)}
+                            onSelect={toggleFolderSelection}
                           />
                         ))}
                       </div>
