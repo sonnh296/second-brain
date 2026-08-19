@@ -65,7 +65,6 @@ import {
   beginLibraryDocDrag,
   endLibraryDocDrag,
 } from "@/lib/documents/library-drag";
-import { rangeSelectIds } from "@/lib/documents/selection";
 import {
   putToR2WithProgress,
   waitForDocumentProcessing,
@@ -173,6 +172,7 @@ export default function DocumentsPage() {
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+  const [docSelectionMode, setDocSelectionMode] = useState(false);
   const [folderSelectionMode, setFolderSelectionMode] = useState(false);
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const selectionAnchorIdRef = useRef<string | null>(null);
@@ -180,6 +180,10 @@ export default function DocumentsPage() {
   const [moveTargetFolderId, setMoveTargetFolderId] = useState<string | null>(null);
   const [movingDocs, setMovingDocs] = useState(false);
   const [moveError, setMoveError] = useState("");
+  const [moveFolderDialogOpen, setMoveFolderDialogOpen] = useState(false);
+  const [moveFolderTargetId, setMoveFolderTargetId] = useState<string | null>(null);
+  const [movingFolders, setMovingFolders] = useState(false);
+  const [moveFolderError, setMoveFolderError] = useState("");
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [noteModal, setNoteModal] = useState<NoteModalState | null>(null);
@@ -313,6 +317,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     // Switching trash mode should reset multi-selection to avoid confusing actions.
     setSelectedDocIds([]);
+    setDocSelectionMode(false);
     selectionAnchorIdRef.current = null;
     setSelectedDoc(null);
     setPreview(null);
@@ -321,6 +326,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     // Switching filters/folder changes the visible dataset.
     setSelectedDocIds([]);
+    setDocSelectionMode(false);
     selectionAnchorIdRef.current = null;
     setSelectedDoc(null);
     setPreview(null);
@@ -333,16 +339,24 @@ export default function DocumentsPage() {
   }, [folderSelectionMode, selectedFolderIds.length])
 
   useEffect(() => {
-    if (!folderSelectionMode) return
+    const hasSelection =
+      folderSelectionMode ||
+      docSelectionMode ||
+      selectedDocIds.length > 0 ||
+      selectedFolderIds.length > 0;
+    if (!hasSelection) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setFolderSelectionMode(false)
         setSelectedFolderIds([])
+        setDocSelectionMode(false)
+        setSelectedDocIds([])
+        selectionAnchorIdRef.current = null
       }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [folderSelectionMode])
+  }, [folderSelectionMode, docSelectionMode, selectedDocIds.length, selectedFolderIds.length])
 
   function toggleFolderSelection(folderId: string) {
     setFolderSelectionMode(true)
@@ -351,11 +365,27 @@ export default function DocumentsPage() {
       return [...prev, folderId]
     })
     // Ensure we don't have doc + folder multi-select at the same time.
+    setDocSelectionMode(false)
     setSelectedDocIds([])
     setSelectedDoc(null)
     setPreview(null)
     setPreviewLoading(false)
     selectionAnchorIdRef.current = null
+  }
+
+  function toggleDocSelection(docId: string) {
+    setDocSelectionMode(true)
+    setSelectedDocIds((prev) => {
+      if (prev.includes(docId)) return prev.filter((id) => id !== docId)
+      return [...prev, docId]
+    })
+    selectionAnchorIdRef.current = docId
+    // Ensure we don't have doc + folder multi-select at the same time.
+    setFolderSelectionMode(false)
+    setSelectedFolderIds([])
+    setSelectedDoc(null)
+    setPreview(null)
+    setPreviewLoading(false)
   }
 
   // Keep selected doc in sync with polling status updates, and refresh subtitle preview when done.
@@ -382,6 +412,7 @@ export default function DocumentsPage() {
     setCurrentFolderId(folderId);
     closePreview();
     setSelectedDocIds([]);
+    setDocSelectionMode(false);
     selectionAnchorIdRef.current = null;
     setFolderSelectionMode(false);
     setSelectedFolderIds([]);
@@ -464,6 +495,34 @@ export default function DocumentsPage() {
       else await refreshFolderView(currentFolderId);
     } finally {
       unmarkDeletingFolder(folderId);
+    }
+  }
+
+  async function moveFoldersToParent(targetParentId: string | null, folderIds: string[]) {
+    if (folderIds.length === 0) return
+    setMovingFolders(true)
+    setMoveFolderError("")
+    try {
+      const results = await Promise.all(
+        folderIds.map(async (id) => {
+          const res = await fetch(`/api/folders/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ parent_id: targetParentId }),
+          })
+          return { id, ok: res.ok }
+        }),
+      )
+      const failed = results.filter((r) => !r.ok)
+      if (failed.length > 0) {
+        setMoveFolderError(`Không thể di chuyển ${failed.length} thư mục`)
+        return
+      }
+      setSelectedFolderIds([])
+      setFolderSelectionMode(false)
+      await refreshFolderView(currentFolderId)
+    } finally {
+      setMovingFolders(false)
     }
   }
 
@@ -754,53 +813,17 @@ export default function DocumentsPage() {
   }
 
   async function openDocument(doc: Document) {
-    setSelectedDocIds([doc.id]);
+    setDocSelectionMode(false);
+    setSelectedDocIds([]);
     setFolderSelectionMode(false);
     setSelectedFolderIds([]);
-    selectionAnchorIdRef.current = doc.id;
+    selectionAnchorIdRef.current = null;
     setSelectedDoc(doc);
     setPreviewLoading(true);
     setPreview(null);
     const res = await fetch(`/api/documents/${doc.id}/preview`);
     if (res.ok) setPreview(await res.json());
     setPreviewLoading(false);
-  }
-
-  function selectDocument(doc: Document, e: React.MouseEvent) {
-    // Single click: select. Shift+click: range. Ctrl/Cmd+click: toggle.
-    setFolderSelectionMode(false);
-    setSelectedFolderIds([]);
-    setPreview(null);
-    setPreviewLoading(false);
-    setSelectedDoc(null);
-
-    const orderedIds = filteredDocs.map((item) => item.id);
-
-    if (e.shiftKey) {
-      const range = rangeSelectIds(
-        orderedIds,
-        selectionAnchorIdRef.current,
-        doc.id,
-      );
-      if (e.metaKey || e.ctrlKey) {
-        setSelectedDocIds((prev) => Array.from(new Set([...prev, ...range])));
-      } else {
-        setSelectedDocIds(range);
-      }
-      return;
-    }
-
-    if (e.metaKey || e.ctrlKey) {
-      setSelectedDocIds((prev) => {
-        if (prev.includes(doc.id)) return prev.filter((id) => id !== doc.id);
-        return [...prev, doc.id];
-      });
-      selectionAnchorIdRef.current = doc.id;
-      return;
-    }
-
-    setSelectedDocIds([doc.id]);
-    selectionAnchorIdRef.current = doc.id;
   }
 
   function closePreview() {
@@ -813,17 +836,7 @@ export default function DocumentsPage() {
       selectedDocIds.length > 0 && selectedDocIds.includes(doc.id)
         ? selectedDocIds
         : [doc.id];
-
-    if (!selectedDocIds.includes(doc.id)) {
-      setSelectedDocIds([doc.id]);
-      selectionAnchorIdRef.current = doc.id;
-    }
-
-    setFolderSelectionMode(false);
-    setSelectedFolderIds([]);
     beginLibraryDocDrag(idsToDrag, e.dataTransfer);
-    setPreview(null);
-    setSelectedDoc(null);
   }
 
   function handleDocDragEnd() {
@@ -1202,6 +1215,45 @@ export default function DocumentsPage() {
       </Dialog>
 
       <Dialog
+        open={moveFolderDialogOpen}
+        title={`Di chuyển ${selectedFolderIds.length} thư mục`}
+        onClose={() => !movingFolders && setMoveFolderDialogOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={movingFolders}
+              onClick={() => setMoveFolderDialogOpen(false)}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={movingFolders}
+              onClick={() => {
+                setMoveFolderDialogOpen(false)
+                void moveFoldersToParent(moveFolderTargetId, selectedFolderIds)
+              }}
+            >
+              {movingFolders ? "Đang di chuyển..." : tc("save")}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FolderPicker
+            folders={allFolders.filter((f) => !selectedFolderIds.includes(f.id))}
+            value={moveFolderTargetId}
+            onChange={(folderId) => setMoveFolderTargetId(folderId)}
+          />
+          {moveFolderError && <p className="text-sm text-destructive">{moveFolderError}</p>}
+        </div>
+      </Dialog>
+
+      <Dialog
         open={moveDialogOpen}
         title={`Di chuyển (${selectedDocIds.length})`}
         onClose={() => !movingDocs && setMoveDialogOpen(false)}
@@ -1522,8 +1574,22 @@ export default function DocumentsPage() {
           {selectedFolderIds.length > 0 ? (
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-xs text-muted-foreground">
-                {selectedFolderIds.length} đã chọn
+                {selectedFolderIds.length} thư mục
               </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9"
+                disabled={movingFolders || deletingFolderIds.length > 0}
+                onClick={() => {
+                  setMoveFolderTargetId(null)
+                  setMoveFolderDialogOpen(true)
+                }}
+              >
+                <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
+                Di chuyển
+              </Button>
               <Button
                 type="button"
                 size="sm"
@@ -1532,6 +1598,7 @@ export default function DocumentsPage() {
                 disabled={deletingFolderIds.length > 0}
                 onClick={() => void bulkDeleteSelectedFolders()}
               >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                 Xóa
               </Button>
               <Button
@@ -1751,7 +1818,21 @@ export default function DocumentsPage() {
         )}
 
         {/* File area + preview split */}
-        <div className="flex-1 flex min-h-0 overflow-hidden relative">
+        <div
+          className="flex-1 flex min-h-0 overflow-hidden relative"
+          onPointerDown={(e) => {
+            // Click on the empty background → deselect everything.
+            const target = e.target as HTMLElement
+            const isItem = target.closest('[data-selectable]')
+            if (!isItem && (selectedDocIds.length > 0 || selectedFolderIds.length > 0 || docSelectionMode || folderSelectionMode)) {
+              setSelectedDocIds([])
+              setDocSelectionMode(false)
+              setSelectedFolderIds([])
+              setFolderSelectionMode(false)
+              selectionAnchorIdRef.current = null
+            }
+          }}
+        >
           <div
             className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 ${
               selectedDoc ? "hidden sm:block" : ""
@@ -1934,11 +2015,15 @@ export default function DocumentsPage() {
                             onDropDocs={(folderId, docIds) =>
                               void moveDocsToFolder(folderId, docIds)
                             }
+                            onDropFolders={(targetId, folderIds) =>
+                              void moveFoldersToParent(targetId, folderIds)
+                            }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                             selectionMode={folderSelectionMode}
                             selected={selectedFolderIds.includes(folder.id)}
                             onSelect={toggleFolderSelection}
+                            selectedFolderIds={selectedFolderIds}
                           />
                         ))}
                       </div>
@@ -1953,11 +2038,15 @@ export default function DocumentsPage() {
                             onDropDocs={(folderId, docIds) =>
                               void moveDocsToFolder(folderId, docIds)
                             }
+                            onDropFolders={(targetId, folderIds) =>
+                              void moveFoldersToParent(targetId, folderIds)
+                            }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
                             selectionMode={folderSelectionMode}
                             selected={selectedFolderIds.includes(folder.id)}
                             onSelect={toggleFolderSelection}
+                            selectedFolderIds={selectedFolderIds}
                           />
                         ))}
                       </div>
@@ -1976,8 +2065,9 @@ export default function DocumentsPage() {
                             key={doc.id}
                             doc={doc}
                             selected={selectedDocIds.includes(doc.id)}
+                            selectionMode={docSelectionMode}
                             onOpen={() => openDocument(doc)}
-                            onSelect={(docId, e) => selectDocument(doc, e)}
+                            onSelect={toggleDocSelection}
                             onEdit={
                               doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)
@@ -1999,8 +2089,9 @@ export default function DocumentsPage() {
                             key={doc.id}
                             doc={doc}
                             selected={selectedDocIds.includes(doc.id)}
+                            selectionMode={docSelectionMode}
                             onOpen={() => openDocument(doc)}
-                            onSelect={(docId, e) => selectDocument(doc, e)}
+                            onSelect={toggleDocSelection}
                             onEdit={
                               doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)

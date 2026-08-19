@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TagBadge } from '@/components/documents/tag-manager'
 import { isImageType } from '@/lib/upload/file-types'
+import { useLongPressSelect } from '@/hooks/use-long-press-select'
 import type { Document } from '@/lib/db/types'
 
 type DocStatus = Document['status']
@@ -108,6 +109,7 @@ export function DocumentThumb({
 export function DriveGridItem({
   doc,
   selected,
+  selectionMode,
   onOpen,
   onSelect,
   onEdit,
@@ -121,8 +123,9 @@ export function DriveGridItem({
 }: {
   doc: Document
   selected: boolean
+  selectionMode?: boolean
   onOpen: () => void
-  onSelect?: (docId: string, e: React.MouseEvent) => void
+  onSelect?: (docId: string) => void
   onEdit?: () => void
   onDelete: () => void
   onToggleFavorite?: () => void
@@ -133,23 +136,36 @@ export function DriveGridItem({
   busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+
+  const press = useLongPressSelect({
+    disabled: busy || !onSelect,
+    onLongPress: () => onSelect?.(doc.id),
+    onTap: () => {
+      if (selectionMode) {
+        onSelect?.(doc.id)
+      } else {
+        onOpen()
+      }
+    },
+  })
+
   return (
     <div
+      data-selectable
       className={`group relative rounded-xl border bg-card p-3 cursor-pointer select-none transition-all hover:shadow-md hover:border-primary/30 ${
         selected ? 'ring-2 ring-primary border-primary/50' : ''
       } ${busy ? 'pointer-events-none opacity-90' : ''}`}
       draggable={Boolean(onDragStart)}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onMouseDown={(e) => {
-        if (e.shiftKey) e.preventDefault()
+      onPointerDown={press.onPointerDown}
+      onPointerMove={press.onPointerMove}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onClick={press.onClick}
+      onDoubleClick={() => {
+        if (!selectionMode) onOpen()
       }}
-      onClick={(e) => {
-        if (busy) return
-        if (onSelect) onSelect(doc.id, e)
-        else onOpen()
-      }}
-      onDoubleClick={() => onOpen()}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
       {onToggleFavorite && (
@@ -219,6 +235,7 @@ export function DriveGridItem({
 export function DriveListItem({
   doc,
   selected,
+  selectionMode,
   onOpen,
   onSelect,
   onEdit,
@@ -233,8 +250,9 @@ export function DriveListItem({
 }: {
   doc: Document
   selected: boolean
+  selectionMode?: boolean
   onOpen: () => void
-  onSelect?: (docId: string, e: React.MouseEvent) => void
+  onSelect?: (docId: string) => void
   onEdit?: () => void
   onDelete: () => void
   onToggleFavorite?: () => void
@@ -245,23 +263,35 @@ export function DriveListItem({
   busy?: boolean
   busyLabel?: string
 }) {
+  const press = useLongPressSelect({
+    disabled: busy || !onSelect,
+    onLongPress: () => onSelect?.(doc.id),
+    onTap: () => {
+      if (selectionMode) {
+        onSelect?.(doc.id)
+      } else {
+        onOpen()
+      }
+    },
+  })
+
   return (
     <div
+      data-selectable
       className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer select-none transition-colors hover:bg-muted/50 ${
         selected ? 'bg-primary/5 border-primary/40' : 'bg-card'
       } ${busy ? 'pointer-events-none opacity-90' : ''}`}
       draggable={Boolean(onDragStart)}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onMouseDown={(e) => {
-        if (e.shiftKey) e.preventDefault()
+      onPointerDown={press.onPointerDown}
+      onPointerMove={press.onPointerMove}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onClick={press.onClick}
+      onDoubleClick={() => {
+        if (!selectionMode) onOpen()
       }}
-      onClick={(e) => {
-        if (busy) return
-        if (onSelect) onSelect(doc.id, e)
-        else onOpen()
-      }}
-      onDoubleClick={() => onOpen()}
     >
       {busy && <ItemBusyOverlay label={busyLabel} />}
       {onToggleFavorite && (

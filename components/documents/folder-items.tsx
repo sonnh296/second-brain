@@ -4,23 +4,71 @@ import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Folder, MoreVertical, Pencil } from 'lucide-react'
 import type { Folder as FolderType } from '@/lib/db/types'
+import { useLongPressSelect } from '@/hooks/use-long-press-select'
 import {
+  LIBRARY_DOC_DRAG_TYPE,
   endLibraryDocDrag,
   isLibraryDocDrag,
   readLibraryDocIds,
 } from '@/lib/documents/library-drag'
 
-function useFolderDocDrop(onDropDocs?: (folderId: string, docIds: string[]) => void) {
+// ─── drag types ──────────────────────────────────────────────────────────────
+
+export const LIBRARY_FOLDER_DRAG_TYPE = 'application/x-second-brain-folders'
+
+let draggingFolderIds: string[] = []
+
+export function beginLibraryFolderDrag(ids: string[], dt: DataTransfer) {
+  draggingFolderIds = [...ids]
+  const payload = JSON.stringify(ids)
+  try {
+    dt.setData(LIBRARY_FOLDER_DRAG_TYPE, payload)
+  } catch {
+    /* some browsers reject custom types */
+  }
+  dt.setData('text/plain', payload)
+  dt.effectAllowed = 'move'
+}
+
+export function endLibraryFolderDrag() {
+  draggingFolderIds = []
+}
+
+function isLibraryFolderDrag(dt: DataTransfer) {
+  if (draggingFolderIds.length > 0) return true
+  return Array.from(dt.types).includes(LIBRARY_FOLDER_DRAG_TYPE)
+}
+
+function readLibraryFolderIds(dt: DataTransfer): string[] {
+  if (draggingFolderIds.length > 0) return [...draggingFolderIds]
+  const raw = dt.getData(LIBRARY_FOLDER_DRAG_TYPE)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((id): id is string => typeof id === 'string')
+  } catch {
+    return []
+  }
+}
+
+// ─── drop zone hook (accepts both docs and folders) ──────────────────────────
+
+function useFolderDropZone(
+  folderId: string,
+  targetFolderId: string,
+  onDropDocs?: (folderId: string, docIds: string[]) => void,
+  onDropFolders?: (targetFolderId: string, folderIds: string[]) => void,
+) {
   const [dragOver, setDragOver] = useState(false)
   const enterCount = useRef(0)
 
-  function resetDrag() {
-    enterCount.current = 0
-    setDragOver(false)
+  function isRelevantDrag(dt: DataTransfer) {
+    return isLibraryDocDrag(dt) || isLibraryFolderDrag(dt)
   }
 
   function onDragEnter(e: React.DragEvent) {
-    if (!onDropDocs || !isLibraryDocDrag(e.dataTransfer)) return
+    if (!isRelevantDrag(e.dataTransfer)) return
     e.preventDefault()
     e.stopPropagation()
     enterCount.current += 1
@@ -28,7 +76,7 @@ function useFolderDocDrop(onDropDocs?: (folderId: string, docIds: string[]) => v
   }
 
   function onDragOver(e: React.DragEvent) {
-    if (!onDropDocs || !isLibraryDocDrag(e.dataTransfer)) return
+    if (!isRelevantDrag(e.dataTransfer)) return
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
@@ -40,19 +88,32 @@ function useFolderDocDrop(onDropDocs?: (folderId: string, docIds: string[]) => v
     if (enterCount.current === 0) setDragOver(false)
   }
 
-  function onDrop(folderId: string, e: React.DragEvent) {
-    if (!onDropDocs) return
+  function onDrop(e: React.DragEvent) {
     e.preventDefault()
     e.stopPropagation()
-    resetDrag()
-    const docIds = readLibraryDocIds(e.dataTransfer)
-    endLibraryDocDrag()
-    if (docIds.length === 0) return
-    onDropDocs(folderId, docIds)
+    enterCount.current = 0
+    setDragOver(false)
+
+    if (isLibraryFolderDrag(e.dataTransfer)) {
+      const ids = readLibraryFolderIds(e.dataTransfer)
+      endLibraryFolderDrag()
+      // Prevent dropping a folder onto itself.
+      const valid = ids.filter((id) => id !== targetFolderId)
+      if (valid.length > 0) onDropFolders?.(targetFolderId, valid)
+      return
+    }
+
+    if (isLibraryDocDrag(e.dataTransfer)) {
+      const ids = readLibraryDocIds(e.dataTransfer)
+      endLibraryDocDrag()
+      if (ids.length > 0) onDropDocs?.(folderId, ids)
+    }
   }
 
   return { dragOver, onDragEnter, onDragOver, onDragLeave, onDrop }
 }
+
+// ─── shared overlay ───────────────────────────────────────────────────────────
 
 function FolderBusyOverlay({ label }: { label: string }) {
   return (
@@ -71,15 +132,19 @@ function FolderBusyOverlay({ label }: { label: string }) {
   )
 }
 
+// ─── FolderGridItem ───────────────────────────────────────────────────────────
+
 export function FolderGridItem({
   folder,
   onOpen,
   onRename,
   onDropDocs,
+  onDropFolders,
   onDelete,
   selectionMode,
   selected,
   onSelect,
+  selectedFolderIds,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
@@ -87,84 +152,63 @@ export function FolderGridItem({
   onOpen: () => void
   onRename: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
+  onDropFolders?: (targetFolderId: string, folderIds: string[]) => void
   onDelete: () => void
   selectionMode?: boolean
   selected?: boolean
   onSelect?: (folderId: string) => void
+  /** Ids currently being dragged (to show drag ghost). */
+  selectedFolderIds?: string[]
   busy?: boolean
   busyLabel?: string
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const t = useTranslations('documents')
-  const drop = useFolderDocDrop(onDropDocs)
-  const pressTimerRef = useRef<number | null>(null)
-  const suppressClickRef = useRef(false)
-  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
 
-  function cancelPress() {
-    if (pressTimerRef.current !== null) {
-      window.clearTimeout(pressTimerRef.current)
-      pressTimerRef.current = null
-    }
-  }
+  const drop = useFolderDropZone(folder.id, folder.id, onDropDocs, onDropFolders)
 
-  function startPress(e: React.PointerEvent) {
-    if (!onSelect || busy) return
-    // Avoid starting long-press from buttons/links inside the card.
-    const el = e.target as HTMLElement | null
-    if (el?.closest('button,a,input,select,textarea,[role="menuitem"]')) return
+  const press = useLongPressSelect({
+    disabled: busy,
+    onLongPress: () => onSelect?.(folder.id),
+    onTap: () => {
+      if (selectionMode) {
+        onSelect?.(folder.id)
+      } else {
+        onOpen()
+      }
+    },
+  })
 
-    suppressClickRef.current = false
-    pressStartRef.current = { x: e.clientX, y: e.clientY }
-    cancelPress()
+  const isDraggable = Boolean(onSelect) && (selectionMode || Boolean(selectedFolderIds?.length))
 
-    pressTimerRef.current = window.setTimeout(() => {
-      suppressClickRef.current = true
-      setMenuOpen(false)
-      onSelect(folder.id)
-      pressTimerRef.current = null
-    }, 520)
+  function onDragStart(e: React.DragEvent) {
+    const ids =
+      selectedFolderIds && selectedFolderIds.includes(folder.id)
+        ? selectedFolderIds
+        : [folder.id]
+    beginLibraryFolderDrag(ids, e.dataTransfer)
   }
 
   return (
     <div
-      className={`group relative rounded-xl border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-amber-500/40 ${
+      data-selectable
+      className={`group relative rounded-xl border bg-card p-3 cursor-pointer select-none transition-all hover:shadow-md hover:border-amber-500/40 ${
         busy ? 'pointer-events-none opacity-90' : ''
       } ${selected ? 'ring-2 ring-primary/70 border-primary/50' : ''} ${
         drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''
       }`}
-      onPointerDown={(e) => startPress(e)}
-      onPointerUp={() => cancelPress()}
-      onPointerCancel={() => cancelPress()}
-      onPointerLeave={() => cancelPress()}
-      onPointerMove={(e) => {
-        const start = pressStartRef.current
-        if (!start) return
-        const dx = Math.abs(e.clientX - start.x)
-        const dy = Math.abs(e.clientY - start.y)
-        if (dx + dy > 10) cancelPress()
-      }}
-      onClick={
-        busy
-          ? undefined
-          : (e) => {
-              if (suppressClickRef.current) {
-                suppressClickRef.current = false
-                return
-              }
-              if (selectionMode) {
-                e.preventDefault()
-                e.stopPropagation()
-                onSelect?.(folder.id)
-                return
-              }
-              onOpen()
-            }
-      }
+      draggable={isDraggable}
+      onDragStart={isDraggable ? onDragStart : undefined}
+      onDragEnd={isDraggable ? endLibraryFolderDrag : undefined}
       onDragEnter={drop.onDragEnter}
       onDragOver={drop.onDragOver}
       onDragLeave={drop.onDragLeave}
-      onDrop={(e) => drop.onDrop(folder.id, e)}
+      onDrop={drop.onDrop}
+      onPointerDown={press.onPointerDown}
+      onPointerMove={press.onPointerMove}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onClick={press.onClick}
     >
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <div className="flex flex-col items-center text-center gap-2">
@@ -216,15 +260,19 @@ export function FolderGridItem({
   )
 }
 
+// ─── FolderListItem ───────────────────────────────────────────────────────────
+
 export function FolderListItem({
   folder,
   onOpen,
   onRename,
   onDropDocs,
+  onDropFolders,
   onDelete,
   selectionMode,
   selected,
   onSelect,
+  selectedFolderIds,
   busy,
   busyLabel = 'Đang xóa...',
 }: {
@@ -232,81 +280,61 @@ export function FolderListItem({
   onOpen: () => void
   onRename: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
+  onDropFolders?: (targetFolderId: string, folderIds: string[]) => void
   onDelete: () => void
   selectionMode?: boolean
   selected?: boolean
   onSelect?: (folderId: string) => void
+  selectedFolderIds?: string[]
   busy?: boolean
   busyLabel?: string
 }) {
   const t = useTranslations('documents')
-  const drop = useFolderDocDrop(onDropDocs)
-  const pressTimerRef = useRef<number | null>(null)
-  const suppressClickRef = useRef(false)
-  const pressStartRef = useRef<{ x: number; y: number } | null>(null)
 
-  function cancelPress() {
-    if (pressTimerRef.current !== null) {
-      window.clearTimeout(pressTimerRef.current)
-      pressTimerRef.current = null
-    }
-  }
+  const drop = useFolderDropZone(folder.id, folder.id, onDropDocs, onDropFolders)
 
-  function startPress(e: React.PointerEvent) {
-    if (!onSelect || busy) return
-    const el = e.target as HTMLElement | null
-    if (el?.closest('button,a,input,select,textarea,[role="menuitem"]')) return
+  const press = useLongPressSelect({
+    disabled: busy,
+    onLongPress: () => onSelect?.(folder.id),
+    onTap: () => {
+      if (selectionMode) {
+        onSelect?.(folder.id)
+      } else {
+        onOpen()
+      }
+    },
+  })
 
-    suppressClickRef.current = false
-    pressStartRef.current = { x: e.clientX, y: e.clientY }
-    cancelPress()
+  const isDraggable = Boolean(onSelect) && (selectionMode || Boolean(selectedFolderIds?.length))
 
-    pressTimerRef.current = window.setTimeout(() => {
-      suppressClickRef.current = true
-      onSelect(folder.id)
-      pressTimerRef.current = null
-    }, 520)
+  function onDragStart(e: React.DragEvent) {
+    const ids =
+      selectedFolderIds && selectedFolderIds.includes(folder.id)
+        ? selectedFolderIds
+        : [folder.id]
+    beginLibraryFolderDrag(ids, e.dataTransfer)
   }
 
   return (
     <div
-      className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors hover:bg-muted/50 bg-card ${
+      data-selectable
+      className={`relative flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer select-none transition-colors hover:bg-muted/50 bg-card ${
         busy ? 'pointer-events-none opacity-90' : ''
       } ${selected ? 'ring-2 ring-primary/70 border-primary/50' : ''} ${
         drop.dragOver ? 'ring-2 ring-primary bg-primary/5' : ''
       }`}
-      onPointerDown={(e) => startPress(e)}
-      onPointerUp={() => cancelPress()}
-      onPointerCancel={() => cancelPress()}
-      onPointerLeave={() => cancelPress()}
-      onPointerMove={(e) => {
-        const start = pressStartRef.current
-        if (!start) return
-        const dx = Math.abs(e.clientX - start.x)
-        const dy = Math.abs(e.clientY - start.y)
-        if (dx + dy > 10) cancelPress()
-      }}
-      onClick={
-        busy
-          ? undefined
-          : (e) => {
-              if (suppressClickRef.current) {
-                suppressClickRef.current = false
-                return
-              }
-              if (selectionMode) {
-                e.preventDefault()
-                e.stopPropagation()
-                onSelect?.(folder.id)
-                return
-              }
-              onOpen()
-            }
-      }
+      draggable={isDraggable}
+      onDragStart={isDraggable ? onDragStart : undefined}
+      onDragEnd={isDraggable ? endLibraryFolderDrag : undefined}
       onDragEnter={drop.onDragEnter}
       onDragOver={drop.onDragOver}
       onDragLeave={drop.onDragLeave}
-      onDrop={(e) => drop.onDrop(folder.id, e)}
+      onDrop={drop.onDrop}
+      onPointerDown={press.onPointerDown}
+      onPointerMove={press.onPointerMove}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onClick={press.onClick}
     >
       {busy && <FolderBusyOverlay label={busyLabel} />}
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
@@ -340,6 +368,8 @@ export function FolderListItem({
   )
 }
 
+// ─── FolderBreadcrumb ─────────────────────────────────────────────────────────
+
 interface FolderBreadcrumbProps {
   items: { id: string | null; name: string }[]
   onNavigate: (folderId: string | null) => void
@@ -366,6 +396,8 @@ export function FolderBreadcrumb({ items, onNavigate }: FolderBreadcrumbProps) {
   )
 }
 
+// ─── FolderPicker ─────────────────────────────────────────────────────────────
+
 interface FolderPickerProps {
   folders: FolderType[]
   value: string | null
@@ -391,3 +423,6 @@ export function FolderPicker({ folders, value, onChange }: FolderPickerProps) {
     </div>
   )
 }
+
+// re-export so page.tsx doesn't need to import library-drag directly
+export { LIBRARY_DOC_DRAG_TYPE }
