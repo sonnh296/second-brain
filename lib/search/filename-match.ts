@@ -217,10 +217,12 @@ export function estimateTokens(text: string): number {
 export async function loadFilenameMatchedChunks(
   supabase: SupabaseClient,
   userId: string,
-  query: string
+  query: string,
+  options: { documentIds?: string[] } = {}
 ): Promise<SearchResult[]> {
   const keywords = extractFilenameKeywords(query)
   if (keywords.length === 0) return []
+  if (options.documentIds && options.documentIds.length === 0) return []
 
   const orFilter = keywords
     .slice(0, 6)
@@ -233,7 +235,7 @@ export async function loadFilenameMatchedChunks(
 
   if (!orFilter) return []
 
-  let { data: docs, error } = await supabase
+  let queryBuilder = supabase
     .from('documents')
     .select('id, filename, description')
     .eq('user_id', userId)
@@ -242,14 +244,24 @@ export async function loadFilenameMatchedChunks(
     .or(orFilter)
     .limit(40)
 
+  if (options.documentIds && options.documentIds.length > 0) {
+    queryBuilder = queryBuilder.in('id', options.documentIds)
+  }
+
+  let { data: docs, error } = await queryBuilder
+
   if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
-    ;({ data: docs, error } = await supabase
+    let fallback = supabase
       .from('documents')
       .select('id, filename, description')
       .eq('user_id', userId)
       .eq('status', 'done')
       .or(orFilter)
-      .limit(40))
+      .limit(40)
+    if (options.documentIds && options.documentIds.length > 0) {
+      fallback = fallback.in('id', options.documentIds)
+    }
+    ;({ data: docs, error } = await fallback)
   }
 
   if (error) {

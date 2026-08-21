@@ -24,6 +24,7 @@ import {
   searchDocumentInventory,
   listUserDocumentCatalog,
 } from '@/lib/search/document-inventory'
+import { resolveDocumentScope } from '@/lib/search/scope-documents'
 import { isDefaultSessionTitle, generateSessionTitle } from '@/lib/ai/session-title'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { logger } from '@/lib/logger'
@@ -56,6 +57,10 @@ const ChatSchema = z.object({
   message: z.string().min(1).max(4000).optional(),
   messages: z.array(MessageSchema).optional(),
   images: z.array(ImageAttachmentSchema).max(5).optional().default([]),
+  /** Knowledge mode: restrict RAG to docs with any of these tags. */
+  tag_ids: z.array(z.string().uuid()).max(20).optional().default([]),
+  /** Knowledge mode: restrict RAG to one folder (exact, not nested). */
+  folder_id: z.string().uuid().nullable().optional(),
 }).superRefine((data, ctx) => {
   const hasMessage = !!data.message?.trim()
   const lastUser = data.messages?.filter((m) => m.role === 'user').at(-1)
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     )
   }
-  const { session_id, mode, images } = parsed.data
+  const { session_id, mode, images, tag_ids, folder_id } = parsed.data
   const message = extractUserMessage(parsed.data)
   const requestedModel: ChatModelId =
     parsed.data.model && isValidChatModel(parsed.data.model)
@@ -153,69 +158,104 @@ export async function POST(req: NextRequest) {
       // Running RAG here causes lag and a misleading "no documents" system prompt.
       documentManagement = true
     } else {
-      const questionVector = await embedSingle(message, {
-        userId,
-        purpose: 'embedding_query',
-      })
-      let retrievedChunks: Awaited<ReturnType<typeof hybridSearch>> = []
+      let scopeDocumentIds: string[] | undefined
       try {
-        retrievedChunks = await hybridSearch(
-          supabase,
-          userId,
-          message,
-          questionVector,
-          RERANK_CANDIDATES
-        )
+        const scope = await resolveDocumentScope(supabase, userId, {
+          tagIds: tag_ids,
+          folderId: folder_id,
+        })
+        if (scope.active) {
+          scopeDocumentIds = scope.documentIds
+        }
       } catch (err) {
-        logger.error('RAG search failed', { err, userId, sessionId: session_id })
+        logger.error('Failed to resolve chat document scope', {
+          err,
+          userId,
+          sessionId: session_id,
+        })
         noContext = true
       }
 
-      const relevantChunks = filterRelevantChunks(retrievedChunks)
+      if (!noContext && scopeDocumentIds && scopeDocumentIds.length === 0) {
+        noContext = true
+      } else if (!noContext) {
+        const questionVector = await embedSingle(message, {
+          userId,
+          purpose: 'embedding_query',
+        })
+        let retrievedChunks: Awaited<ReturnType<typeof hybridSearch>> = []
+        try {
+          retrievedChunks = await hybridSearch(
+            supabase,
+            userId,
+            message,
+            questionVector,
+            RERANK_CANDIDATES,
+            scopeDocumentIds ? { documentIds: scopeDocumentIds } : undefined
+          )
+        } catch (err) {
+          logger.error('RAG search failed', { err, userId, sessionId: session_id })
+          noContext = true
+        }
 
-      if (relevantChunks.length > 0) {
-        const documentIds = [...new Set(relevantChunks.map((r) => r.payload.document_id))]
-        const { data: docRecords } = await supabase
-          .from('documents')
-          .select('id, filename, file_type')
-          .in('id', documentIds)
+        const relevantChunks = filterRelevantChunks(retrievedChunks)
 
-        const filenameByDocId = new Map(
-          (docRecords ?? []).map((d) => [d.id, d.filename])
-        )
-        const fileTypeByDocId = new Map(
-          (docRecords ?? []).map((d) => [d.id, d.file_type as string])
-        )
+        if (relevantChunks.length > 0) {
+          const documentIds = [...new Set(relevantChunks.map((r) => r.payload.document_id))]
+          const { data: docRecords } = await supabase
+            .from('documents')
+            .select('id, filename, file_type')
+            .in('id', documentIds)
 
-        const resolveFilename = (r: (typeof relevantChunks)[0]) =>
-          resolveDisplayFilename(
-            r.payload.filename,
-            r.payload.document_id,
-            filenameByDocId
+          const filenameByDocId = new Map(
+            (docRecords ?? []).map((d) => [d.id, d.filename])
+          )
+          const fileTypeByDocId = new Map(
+            (docRecords ?? []).map((d) => [d.id, d.file_type as string])
           )
 
-        const reranked = await rerankChunks(message, relevantChunks, resolveFilename)
-        usedKnowledge = reranked.length > 0
-        sources = reranked.map((r) => ({
-          ...r,
-          file_type: fileTypeByDocId.get(r.document_id),
-        }))
-      } else if (isDocumentInventoryQuery(message)) {
-        const inventory = await searchDocumentInventory(supabase, userId, message)
-        if (inventory.length > 0) {
-          usedKnowledge = true
-          sources = inventory.map((s) => ({ ...s, score: 1 }))
-        } else {
-          const catalog = await listUserDocumentCatalog(supabase, userId)
-          if (catalog.length > 0) {
+          const resolveFilename = (r: (typeof relevantChunks)[0]) =>
+            resolveDisplayFilename(
+              r.payload.filename,
+              r.payload.document_id,
+              filenameByDocId
+            )
+
+          const reranked = await rerankChunks(message, relevantChunks, resolveFilename)
+          usedKnowledge = reranked.length > 0
+          sources = reranked.map((r) => ({
+            ...r,
+            file_type: fileTypeByDocId.get(r.document_id),
+          }))
+        } else if (isDocumentInventoryQuery(message)) {
+          const inventoryOpts = scopeDocumentIds
+            ? { documentIds: scopeDocumentIds }
+            : undefined
+          const inventory = await searchDocumentInventory(
+            supabase,
+            userId,
+            message,
+            inventoryOpts
+          )
+          if (inventory.length > 0) {
             usedKnowledge = true
-            sources = catalog.map((s) => ({ ...s, score: 1 }))
+            sources = inventory.map((s) => ({ ...s, score: 1 }))
           } else {
-            noContext = true
+            const catalog = await listUserDocumentCatalog(
+              supabase,
+              userId,
+              inventoryOpts
+            )
+            if (catalog.length > 0) {
+              usedKnowledge = true
+              sources = catalog.map((s) => ({ ...s, score: 1 }))
+            } else {
+              noContext = true
+            }
           }
+        } else {
+          noContext = true
         }
-      } else {
-        noContext = true
       }
     }
   }
@@ -278,10 +318,13 @@ export async function POST(req: NextRequest) {
     })
   }
   if (noContext && !conversational && !documentManagement) {
+    const scoped =
+      (tag_ids?.length ?? 0) > 0 || (folder_id != null && folder_id !== '')
     streamData.append({
       no_context: true,
-      message:
-        'Không tìm thấy tài liệu liên quan — trả lời dựa trên kiến thức chung.',
+      message: scoped
+        ? 'Không tìm thấy nội dung phù hợp trong phạm vi tag/folder đã chọn.'
+        : 'Không tìm thấy tài liệu liên quan — trả lời dựa trên kiến thức chung.',
     })
   }
 

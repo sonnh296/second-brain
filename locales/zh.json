@@ -155,7 +155,15 @@
   "chat": {
     "title": "聊天",
     "newChat": "新对话",
-    "placeholder": "输入问题..."
+    "placeholder": "输入问题...",
+    "modeKnowledge": "知识库",
+    "modeGeneral": "自由聊天",
+    "placeholderKnowledge": "询问你的文档…（Enter 发送）",
+    "placeholderGeneral": "自由聊天…（Enter 发送）",
+    "scopeByTag": "按标签限定",
+    "scopeAll": "清除（全部文档）",
+    "scopeNoTags": "还没有标签 — 请在文档页创建。",
+    "scopeActive": "已限定 {count} 个标签"
   },
   "errors": {
     "generic": "出错了"

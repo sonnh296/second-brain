@@ -28,13 +28,15 @@ function documentMatchesKeywords(doc: DocumentRow, keywords: string[]): boolean 
 export async function searchDocumentInventory(
   supabase: SupabaseClient,
   userId: string,
-  query: string
+  query: string,
+  options: { documentIds?: string[] } = {}
 ): Promise<SourceChunk[]> {
   if (!isDocumentInventoryQuery(query)) return []
+  if (options.documentIds && options.documentIds.length === 0) return []
 
   const keywords = extractSearchKeywords(query)
 
-  let { data: docs, error } = await supabase
+  let queryBuilder = supabase
     .from('documents')
     .select('id, filename, description, file_type, chunk_count')
     .eq('user_id', userId)
@@ -42,14 +44,24 @@ export async function searchDocumentInventory(
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
+  if (options.documentIds && options.documentIds.length > 0) {
+    queryBuilder = queryBuilder.in('id', options.documentIds)
+  }
+
+  let { data: docs, error } = await queryBuilder
+
   // Migration 015 chưa chạy → bỏ filter deleted_at
   if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
-    ;({ data: docs, error } = await supabase
+    let fallback = supabase
       .from('documents')
       .select('id, filename, description, file_type, chunk_count')
       .eq('user_id', userId)
       .eq('status', 'done')
-      .order('created_at', { ascending: false }))
+      .order('created_at', { ascending: false })
+    if (options.documentIds && options.documentIds.length > 0) {
+      fallback = fallback.in('id', options.documentIds)
+    }
+    ;({ data: docs, error } = await fallback)
   }
 
   if (error || !docs?.length) return []
@@ -76,9 +88,12 @@ export async function searchDocumentInventory(
 /** Short catalog injected when inventory query finds nothing by keyword. */
 export async function listUserDocumentCatalog(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  options: { documentIds?: string[] } = {}
 ): Promise<SourceChunk[]> {
-  let { data: docs, error } = await supabase
+  if (options.documentIds && options.documentIds.length === 0) return []
+
+  let queryBuilder = supabase
     .from('documents')
     .select('filename, file_type, chunk_count')
     .eq('user_id', userId)
@@ -87,14 +102,24 @@ export async function listUserDocumentCatalog(
     .order('created_at', { ascending: false })
     .limit(30)
 
+  if (options.documentIds && options.documentIds.length > 0) {
+    queryBuilder = queryBuilder.in('id', options.documentIds)
+  }
+
+  let { data: docs, error } = await queryBuilder
+
   if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
-    ;({ data: docs } = await supabase
+    let fallback = supabase
       .from('documents')
       .select('filename, file_type, chunk_count')
       .eq('user_id', userId)
       .eq('status', 'done')
       .order('created_at', { ascending: false })
-      .limit(30))
+      .limit(30)
+    if (options.documentIds && options.documentIds.length > 0) {
+      fallback = fallback.in('id', options.documentIds)
+    }
+    ;({ data: docs } = await fallback)
   }
 
   if (!docs?.length) return []

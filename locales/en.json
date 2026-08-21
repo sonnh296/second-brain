@@ -155,7 +155,15 @@
   "chat": {
     "title": "Chat",
     "newChat": "New chat",
-    "placeholder": "Ask a question..."
+    "placeholder": "Ask a question...",
+    "modeKnowledge": "Knowledge base",
+    "modeGeneral": "Free chat",
+    "placeholderKnowledge": "Ask about your documents… (Enter to send)",
+    "placeholderGeneral": "Free chat… (Enter to send)",
+    "scopeByTag": "Chat within tags",
+    "scopeAll": "Clear (all docs)",
+    "scopeNoTags": "No tags yet — create tags on the Documents page.",
+    "scopeActive": "Scoped to {count} tag(s)"
   },
   "errors": {
     "generic": "Something went wrong"

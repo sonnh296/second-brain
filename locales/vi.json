@@ -155,7 +155,15 @@
   "chat": {
     "title": "Chat",
     "newChat": "Cuộc trò chuyện mới",
-    "placeholder": "Nhập câu hỏi..."
+    "placeholder": "Nhập câu hỏi...",
+    "modeKnowledge": "Kho tài liệu",
+    "modeGeneral": "Chat tự do",
+    "placeholderKnowledge": "Hỏi về tài liệu… (Enter gửi)",
+    "placeholderGeneral": "Chat tự do… (Enter gửi)",
+    "scopeByTag": "Chat theo tag",
+    "scopeAll": "Bỏ chọn (toàn bộ)",
+    "scopeNoTags": "Chưa có tag — tạo tag ở trang Tài liệu.",
+    "scopeActive": "Đang lọc {count} tag"
   },
   "errors": {
     "generic": "Đã xảy ra lỗi"

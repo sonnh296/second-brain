@@ -99,15 +99,24 @@ export async function updateDocumentFilename(
 export async function searchChunks(
   userId: string,
   vector: number[],
-  topK: number
+  topK: number,
+  options: { documentIds?: string[] } = {}
 ): Promise<SearchResult[]> {
+  const documentIds = options.documentIds
+  if (documentIds && documentIds.length === 0) return []
+
+  const must: { key: string; match: { value: string } | { any: string[] } }[] = [
+    { key: 'user_id', match: { value: userId } },
+  ]
+  if (documentIds && documentIds.length > 0) {
+    must.push({ key: 'document_id', match: { any: documentIds } })
+  }
+
   const client = getQdrantClient()
   const results = await client.search(getCollectionName(), {
     vector,
     limit: topK,
-    filter: {
-      must: [{ key: 'user_id', match: { value: userId } }],
-    },
+    filter: { must },
     with_payload: true,
   })
 

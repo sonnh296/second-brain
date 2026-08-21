@@ -15,6 +15,12 @@ export interface HybridSearchResult {
 const KEYWORD_WEIGHT = 0.4
 const VECTOR_WEIGHT = 0.6
 
+export type HybridSearchOptions = {
+  serviceRole?: boolean
+  /** When set, only search these documents. Empty array → no results. */
+  documentIds?: string[]
+}
+
 /**
  * Hybrid retrieval: Qdrant vector + Postgres FTS + filename match, fused by RRF-style scoring.
  * Filename hits are prepended so they are not dropped by the later top-N cutoff.
@@ -25,14 +31,24 @@ export async function hybridSearch(
   query: string,
   vector: number[],
   topK: number,
-  options: { serviceRole?: boolean } = {}
+  options: HybridSearchOptions = {}
 ): Promise<SearchResult[]> {
+  if (options.documentIds && options.documentIds.length === 0) return []
+
   const candidateCount = Number(process.env.RERANK_CANDIDATES ?? 20)
+  const scope = options.documentIds ? { documentIds: options.documentIds } : undefined
 
   const [vectorResults, keywordResults, filenameResults] = await Promise.all([
-    searchChunks(userId, vector, candidateCount),
-    keywordSearchChunks(supabase, userId, query, candidateCount, options.serviceRole),
-    loadFilenameMatchedChunks(supabase, userId, query),
+    searchChunks(userId, vector, candidateCount, scope),
+    keywordSearchChunks(
+      supabase,
+      userId,
+      query,
+      candidateCount,
+      options.serviceRole,
+      options.documentIds
+    ),
+    loadFilenameMatchedChunks(supabase, userId, query, scope),
   ])
 
   const fused = fuseResults(vectorResults, keywordResults, topK)
@@ -44,7 +60,8 @@ async function keywordSearchChunks(
   userId: string,
   query: string,
   limit: number,
-  serviceRole = false
+  serviceRole = false,
+  documentIds?: string[]
 ): Promise<
   {
     document_id: string
@@ -55,15 +72,20 @@ async function keywordSearchChunks(
   }[]
 > {
   if (!query.trim()) return []
+  if (documentIds && documentIds.length === 0) return []
 
   const rpcName = serviceRole
     ? 'search_document_chunks_internal'
     : 'search_document_chunks'
 
+  // Fetch extra candidates when post-filtering by document scope so recall stays usable.
+  const rpcLimit =
+    documentIds && documentIds.length > 0 ? Math.max(limit * 5, 50) : limit
+
   const { data, error } = await supabase.rpc(rpcName, {
     p_user_id: userId,
     p_query: query.trim(),
-    p_limit: limit,
+    p_limit: rpcLimit,
   })
 
   if (error) {
@@ -71,13 +93,20 @@ async function keywordSearchChunks(
     return []
   }
 
-  return (data ?? []) as {
+  let rows = (data ?? []) as {
     document_id: string
     chunk_index: number
     chunk_text: string
     filename: string
     rank: number
   }[]
+
+  if (documentIds && documentIds.length > 0) {
+    const allowed = new Set(documentIds)
+    rows = rows.filter((r) => allowed.has(r.document_id))
+  }
+
+  return rows.slice(0, limit)
 }
 
 function fuseResults(

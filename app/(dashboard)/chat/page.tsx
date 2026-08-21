@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useChat } from 'ai/react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,6 +12,7 @@ import { TypingIndicator } from '@/components/typing-indicator'
 import { ImagePreviewModal } from '@/components/chat/image-preview-modal'
 import { SourceBadge } from '@/components/chat/source-badge'
 import { PendingActionCard } from '@/components/chat/pending-action-card'
+import { ChatTagScope } from '@/components/chat/chat-tag-scope'
 import type { AttachedImage, ChatMode, PreviewModal, SessionMessage } from '@/components/chat/types'
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, type ChatModelId } from '@/lib/ai/models'
 import { dedupeCitedSourcesByFile } from '@/lib/ai/citations'
@@ -32,18 +34,23 @@ import type {
   CitedSource,
   MessageAttachmentMeta,
   PendingChatAction,
+  Tag,
 } from '@/lib/db/types'
 
 const MODEL_STORAGE_KEY = 'second-brain-chat-model'
 const CHAT_MODE_STORAGE_KEY = 'second-brain-chat-mode'
+const CHAT_TAG_SCOPE_STORAGE_KEY = 'second-brain-chat-tag-ids'
 
 export default function ChatPage() {
+  const t = useTranslations('chat')
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [selectedModel, setSelectedModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL)
   const [chatMode, setChatMode] = useState<ChatMode>('knowledge')
+  const [tags, setTags] = useState<Tag[]>([])
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [noContextNotice, setNoContextNotice] = useState<string | null>(null)
@@ -83,6 +90,38 @@ export default function ChatPage() {
     if (savedMode === 'knowledge' || savedMode === 'general') {
       setChatMode(savedMode)
     }
+    try {
+      const savedTags = JSON.parse(
+        localStorage.getItem(CHAT_TAG_SCOPE_STORAGE_KEY) ?? '[]'
+      ) as unknown
+      if (Array.isArray(savedTags) && savedTags.every((id) => typeof id === 'string')) {
+        setSelectedTagIds(savedTags)
+      }
+    } catch {
+      // ignore bad localStorage
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const res = await fetch('/api/tags')
+      if (!res.ok || cancelled) return
+      const data = (await res.json()) as Tag[]
+      if (cancelled) return
+      setTags(data)
+      setSelectedTagIds((prev) => {
+        const valid = new Set(data.map((tag) => tag.id))
+        const next = prev.filter((id) => valid.has(id))
+        if (next.length !== prev.length) {
+          localStorage.setItem(CHAT_TAG_SCOPE_STORAGE_KEY, JSON.stringify(next))
+        }
+        return next
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, status, setMessages, data: streamData } = useChat({
@@ -92,6 +131,7 @@ export default function ChatPage() {
       session_id: isDraftSession(activeSession) ? undefined : activeSession?.id,
       model: selectedModel,
       mode: chatMode,
+      tag_ids: chatMode === 'knowledge' ? selectedTagIds : [],
     },
     onError: (err) => {
       console.error('[chat] Error:', err)
@@ -288,6 +328,11 @@ export default function ChatPage() {
     localStorage.setItem(CHAT_MODE_STORAGE_KEY, value)
   }
 
+  function onTagScopeChange(tagIds: string[]) {
+    setSelectedTagIds(tagIds)
+    localStorage.setItem(CHAT_TAG_SCOPE_STORAGE_KEY, JSON.stringify(tagIds))
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!activeSession || ensuringSession || isLoading) return
@@ -310,6 +355,7 @@ export default function ChatPage() {
         session_id: session.id,
         model: selectedModel,
         mode: chatMode,
+        tag_ids: chatMode === 'knowledge' ? selectedTagIds : [],
         images: imagePayload,
       },
     })
@@ -586,7 +632,7 @@ export default function ChatPage() {
                         : 'bg-background text-muted-foreground hover:bg-muted'
                     }`}
                   >
-                    Kho tài liệu
+                    {t('modeKnowledge')}
                   </button>
                   <button
                     type="button"
@@ -597,7 +643,7 @@ export default function ChatPage() {
                         : 'bg-background text-muted-foreground hover:bg-muted'
                     }`}
                   >
-                    Chat tự do
+                    {t('modeGeneral')}
                   </button>
                 </div>
                 <label htmlFor="model-select" className="sr-only sm:not-sr-only text-xs text-muted-foreground">
@@ -617,6 +663,17 @@ export default function ChatPage() {
                 </select>
               </div>
             </div>
+
+            {chatMode === 'knowledge' && (
+              <div className="shrink-0 px-3 sm:px-4 py-2 border-b bg-background/80">
+                <ChatTagScope
+                  tags={tags}
+                  selectedTagIds={selectedTagIds}
+                  onChange={onTagScopeChange}
+                  disabled={isLoading}
+                />
+              </div>
+            )}
 
             <div ref={messagesRef} className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4">
               <div className="space-y-3 sm:space-y-4 max-w-3xl mx-auto">
@@ -785,8 +842,8 @@ export default function ChatPage() {
                     onPaste={onComposerPaste}
                     placeholder={
                       chatMode === 'knowledge'
-                        ? 'Hỏi về tài liệu… (Enter gửi)'
-                        : 'Chat tự do… (Enter gửi)'
+                        ? t('placeholderKnowledge')
+                        : t('placeholderGeneral')
                     }
                     disabled={isLoading}
                     rows={2}
