@@ -9,7 +9,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '@/components/documents/document-grid'
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
-import { FolderPicker } from '@/components/documents/folder-items'
 import { cn } from '@/lib/utils'
 import {
   isBrowserInlineType,
@@ -50,11 +49,8 @@ interface DocumentPreviewPanelProps {
   fileIcon: React.ReactNode
   formatBytes: (bytes: number) => string
   allTags: Tag[]
-  allFolders: { id: string; name: string; parent_id: string | null }[]
   selectedTagIds: string[]
-  selectedFolderId: string | null
   savingTags: boolean
-  savingFolder: boolean
   onClose: () => void
   onEditName: (v: string) => void
   onEditDescription: (v: string) => void
@@ -64,15 +60,12 @@ interface DocumentPreviewPanelProps {
   onSaveContent: () => void | Promise<void>
   onTagIdsChange: (ids: string[]) => void
   onSaveTags: () => void
-  onFolderChange: (folderId: string | null) => void
-  onSaveFolder: () => void
   onReprocessOcr?: () => void
   reprocessingOcr?: boolean
   onReupload?: () => void
   reuploading?: boolean
   onKeepWeakOcr?: () => void
   keepingWeakOcr?: boolean
-  onEditNote?: () => void
   onDelete: () => void
   deleting?: boolean
 }
@@ -382,11 +375,8 @@ export function DocumentPreviewPanel({
   fileIcon,
   formatBytes,
   allTags,
-  allFolders,
   selectedTagIds,
-  selectedFolderId,
   savingTags,
-  savingFolder,
   onClose,
   onEditName,
   onEditDescription,
@@ -396,15 +386,12 @@ export function DocumentPreviewPanel({
   onSaveContent,
   onTagIdsChange,
   onSaveTags,
-  onFolderChange,
-  onSaveFolder,
   onReprocessOcr,
   reprocessingOcr,
   onReupload,
   reuploading,
   onKeepWeakOcr,
   keepingWeakOcr = false,
-  onEditNote,
   onDelete,
   deleting = false,
 }: DocumentPreviewPanelProps) {
@@ -663,32 +650,6 @@ export function DocumentPreviewPanel({
               onSave={onSaveTags}
             />
 
-            <div className="space-y-2">
-              <FolderPicker
-                folders={allFolders.map((f) => ({
-                  id: f.id,
-                  user_id: '',
-                  parent_id: f.parent_id,
-                  name: f.name,
-                  color: '#f59e0b',
-                  description: null,
-                  created_at: '',
-                  updated_at: '',
-                }))}
-                value={selectedFolderId}
-                onChange={onFolderChange}
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={onSaveFolder}
-                disabled={savingFolder}
-              >
-                {savingFolder ? 'Đang lưu...' : 'Di chuyển thư mục'}
-              </Button>
-            </div>
-
             <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
               <p>Loại: {typeLabels[doc.file_type] ?? doc.file_type}</p>
               <p>Kích thước: {formatBytes(doc.file_size_bytes)}</p>
@@ -717,11 +678,6 @@ export function DocumentPreviewPanel({
                   disabled={reprocessingOcr}
                 >
                   {reprocessingOcr ? 'Đang quét lại...' : 'Quét lại OCR'}
-                </Button>
-              )}
-              {onEditNote && (
-                <Button variant="outline" size="sm" onClick={onEditNote}>
-                  Sửa nội dung
                 </Button>
               )}
               <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>

@@ -166,8 +166,6 @@ export default function DocumentsPage() {
   const [renameFolderDescription, setRenameFolderDescription] = useState("");
   const [renameFolderError, setRenameFolderError] = useState("");
   const [savingFolderName, setSavingFolderName] = useState(false);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
-  const [savingFolder, setSavingFolder] = useState(false);
   const [reprocessingOcr, setReprocessingOcr] = useState(false);
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
@@ -563,7 +561,6 @@ export default function DocumentsPage() {
       setEditName(selectedDoc.filename);
       setEditDescription(selectedDoc.description ?? "");
       setSelectedTagIds(selectedDoc.tags?.map((t) => t.id) ?? []);
-      setSelectedFolderId(selectedDoc.folder_id ?? null);
     }
   }, [selectedDoc]);
 
@@ -1029,22 +1026,6 @@ export default function DocumentsPage() {
       await refreshFolderView(currentFolderId);
     }
     setSavingTags(false);
-  }
-
-  async function saveFolder() {
-    if (!selectedDoc) return;
-    setSavingFolder(true);
-    const res = await fetch(`/api/documents/${selectedDoc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ folder_id: selectedFolderId }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setSelectedDoc(updated);
-      await refreshFolderView(currentFolderId);
-    }
-    setSavingFolder(false);
   }
 
   async function reprocessOcr() {
@@ -2134,11 +2115,8 @@ export default function DocumentsPage() {
                 fileIcon={<FileIcon type={selectedDoc.file_type} />}
                 formatBytes={formatBytes}
                 allTags={tags}
-                allFolders={allFolders}
                 selectedTagIds={selectedTagIds}
-                selectedFolderId={selectedFolderId}
                 savingTags={savingTags}
-                savingFolder={savingFolder}
                 onClose={closePreview}
                 onEditName={setEditName}
                 onEditDescription={setEditDescription}
@@ -2148,8 +2126,6 @@ export default function DocumentsPage() {
                 onSaveContent={saveContent}
                 onTagIdsChange={setSelectedTagIds}
                 onSaveTags={saveTags}
-                onFolderChange={setSelectedFolderId}
-                onSaveFolder={saveFolder}
                 onReprocessOcr={
                   isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
                 }
@@ -2164,11 +2140,6 @@ export default function DocumentsPage() {
                     : undefined
                 }
                 reuploading={uploading && reuploadDoc?.id === selectedDoc.id}
-                onEditNote={
-                  selectedDoc.file_type === "note"
-                    ? () => openEditNoteModal(selectedDoc)
-                    : undefined
-                }
                 onDelete={() => handleDelete(selectedDoc.id)}
                 deleting={deletingDocIds.includes(selectedDoc.id)}
               />

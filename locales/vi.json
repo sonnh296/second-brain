@@ -163,7 +163,8 @@
     "scopeByTag": "Chat theo tag",
     "scopeAll": "Bỏ chọn (toàn bộ)",
     "scopeNoTags": "Chưa có tag — tạo tag ở trang Tài liệu.",
-    "scopeActive": "Đang lọc {count} tag"
+    "scopeActive": "Đang lọc {count} tag",
+    "scopeCollapsedAll": "Toàn bộ tài liệu"
   },
   "errors": {
     "generic": "Đã xảy ra lỗi"

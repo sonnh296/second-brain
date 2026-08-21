@@ -163,7 +163,8 @@
     "scopeByTag": "Chat within tags",
     "scopeAll": "Clear (all docs)",
     "scopeNoTags": "No tags yet — create tags on the Documents page.",
-    "scopeActive": "Scoped to {count} tag(s)"
+    "scopeActive": "Scoped to {count} tag(s)",
+    "scopeCollapsedAll": "All documents"
   },
   "errors": {
     "generic": "Something went wrong"

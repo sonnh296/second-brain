@@ -163,7 +163,8 @@
     "scopeByTag": "按标签限定",
     "scopeAll": "清除（全部文档）",
     "scopeNoTags": "还没有标签 — 请在文档页创建。",
-    "scopeActive": "已限定 {count} 个标签"
+    "scopeActive": "已限定 {count} 个标签",
+    "scopeCollapsedAll": "全部文档"
   },
   "errors": {
     "generic": "出错了"
