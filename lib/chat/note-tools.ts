@@ -36,6 +36,8 @@ export interface NoteToolsContext {
   supabase: SupabaseClient
   userId: string
   sessionId: string
+  /** When set, search tools only return these documents (chat tag/folder scope). */
+  documentIds?: string[]
   /** Called when a tool creates a pending action needing user confirmation. */
   onPendingAction: (action: PendingChatAction) => void
 }
@@ -50,7 +52,9 @@ export interface NoteToolsContext {
  * - every tool verifies ownership; destructive ops re-verify at confirm time
  */
 export function buildNoteTools(ctx: NoteToolsContext) {
-  const { supabase, userId, sessionId, onPendingAction } = ctx
+  const { supabase, userId, sessionId, documentIds, onPendingAction } = ctx
+  const scopedEmpty = documentIds !== undefined && documentIds.length === 0
+  const scopedIds = documentIds && documentIds.length > 0 ? documentIds : undefined
 
   async function findOwnedNote(documentId: string) {
     const { data: doc } = await supabase
@@ -70,6 +74,9 @@ export function buildNoteTools(ctx: NoteToolsContext) {
         query: z.string().min(1).max(200).describe('Từ khóa tìm kiếm'),
       }),
       execute: async ({ query }) => {
+        if (scopedEmpty) {
+          return { notes: [], hint: 'Không có tài liệu trong phạm vi tag/folder đã chọn.' }
+        }
         const term = sanitizeSearchTerm(query)
         let builder = supabase
           .from('documents')
@@ -77,12 +84,13 @@ export function buildNoteTools(ctx: NoteToolsContext) {
           .eq('user_id', userId)
           .eq('file_type', 'note')
           .is('deleted_at', null)
-          .order('created_at', { ascending: false })
-          .limit(10)
-
+        if (scopedIds) {
+          builder = builder.in('id', scopedIds)
+        }
         if (term) {
           builder = builder.or(`filename.ilike.%${term}%,note_content.ilike.%${term}%`)
         }
+        builder = builder.order('created_at', { ascending: false }).limit(10)
 
         const { data: notes, error } = await builder
         if (error) {
@@ -309,16 +317,26 @@ export function buildNoteTools(ctx: NoteToolsContext) {
       }),
       execute: async ({ query }) => {
         try {
+          if (scopedEmpty) {
+            return {
+              matched_by_query: false,
+              hint: 'Không có tài liệu trong phạm vi tag/folder đã chọn.',
+              documents: [],
+              folders: [],
+            }
+          }
           const term = sanitizeSearchTerm(!query || query === '*' ? '' : query)
 
           async function fetchRecent(limit = 15) {
-            return supabase
+            let q = supabase
               .from('documents')
               .select('id, filename, file_type, folder_id, description, created_at')
               .eq('user_id', userId)
               .is('deleted_at', null)
-              .order('created_at', { ascending: false })
-              .limit(limit)
+            if (scopedIds) {
+              q = q.in('id', scopedIds)
+            }
+            return q.order('created_at', { ascending: false }).limit(limit)
           }
 
           let docs: {
@@ -332,11 +350,15 @@ export function buildNoteTools(ctx: NoteToolsContext) {
           let matchedByQuery = false
 
           if (term) {
-            const { data, error } = await supabase
+            let q = supabase
               .from('documents')
               .select('id, filename, file_type, folder_id, description, created_at')
               .eq('user_id', userId)
               .is('deleted_at', null)
+            if (scopedIds) {
+              q = q.in('id', scopedIds)
+            }
+            const { data, error } = await q
               .or(`filename.ilike.%${term}%,description.ilike.%${term}%`)
               .order('created_at', { ascending: false })
               .limit(15)
@@ -380,7 +402,9 @@ export function buildNoteTools(ctx: NoteToolsContext) {
               ? undefined
               : term
                 ? `Không khớp tên file "${term}". Đây là các file gần đây — hỏi user chọn đúng file.`
-                : 'Danh sách file gần đây.',
+                : scopedIds
+                  ? 'Danh sách tài liệu trong phạm vi tag/folder đã chọn.'
+                  : 'Danh sách file gần đây.',
             documents: docs.map((d) => ({
               document_id: d.id,
               filename: d.filename,
@@ -793,6 +817,7 @@ Quy tắc an toàn:
 - Khi đổi tên: search bằng tên HIỆN TẠI (hoặc từ khóa mô tả), KHÔNG search bằng tên mới. Ví dụ user nói "đổi báo cáo.pdf thành abc" → search "báo cáo" chứ không search "abc".
 - Nếu user không nêu rõ file nào, gọi search_documents với query rỗng để lấy danh sách gần đây rồi hỏi chọn.
 - Không kết luận "không có tài liệu trong kho" nếu chưa gọi search_documents/search_notes.
+- Nếu đang lọc tag/folder, search_documents/search_notes chỉ trả file trong phạm vi đó — không liệt kê file ngoài phạm vi.
 - Nếu tìm thấy nhiều kết quả khớp, hỏi lại người dùng chọn cái nào trước khi đề xuất.
 - Mỗi lượt chỉ đề xuất tối đa 3 thao tác.
 - Sau khi tạo đề xuất, tóm tắt ngắn gọn và nhắc người dùng bấm nút Xác nhận.

@@ -7,11 +7,20 @@ const INVENTORY_PHRASES = [
   'da upload',
   'da tai',
   'tai lieu nao',
+  'tai lieu cua toi',
+  'tai lieu cua minh',
+  'tai lieu gi',
+  'cac tai lieu',
+  'nhung tai lieu',
+  'file cua toi',
   'file nao',
   'danh sach tai lieu',
+  'danh sach file',
   'liet ke',
   'trong kho',
   'knowledge base',
+  'my documents',
+  'what documents',
 ]
 
 /** Document management via chat tools — skip RAG retrieval for these. */

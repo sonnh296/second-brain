@@ -147,7 +147,31 @@ export async function POST(req: NextRequest) {
   let documentManagement = false
   const hasTextMessage = message.trim().length > 0
 
+  let scopeDocumentIds: string[] | undefined
   if (mode === 'knowledge') {
+    try {
+      const scope = await resolveDocumentScope(supabase, userId, {
+        tagIds: tag_ids,
+        folderId: folder_id,
+      })
+      if (scope.active) {
+        scopeDocumentIds = scope.documentIds
+      }
+    } catch (err) {
+      logger.error('Failed to resolve chat document scope', {
+        err,
+        userId,
+        sessionId: session_id,
+      })
+      noContext = true
+    }
+  }
+
+  const inventoryOpts = scopeDocumentIds
+    ? { documentIds: scopeDocumentIds }
+    : undefined
+
+  if (mode === 'knowledge' && !noContext) {
     if (!hasTextMessage && images.length > 0) {
       // Image-only turns should not spend embedding / retrieval budget on an empty query.
       conversational = true
@@ -157,105 +181,82 @@ export async function POST(req: NextRequest) {
       // Skip RAG — rename/move/tag/note tools need Postgres search, not chunk retrieval.
       // Running RAG here causes lag and a misleading "no documents" system prompt.
       documentManagement = true
-    } else {
-      let scopeDocumentIds: string[] | undefined
-      try {
-        const scope = await resolveDocumentScope(supabase, userId, {
-          tagIds: tag_ids,
-          folderId: folder_id,
-        })
-        if (scope.active) {
-          scopeDocumentIds = scope.documentIds
-        }
-      } catch (err) {
-        logger.error('Failed to resolve chat document scope', {
-          err,
+    } else if (scopeDocumentIds && scopeDocumentIds.length === 0) {
+      noContext = true
+    } else if (isDocumentInventoryQuery(message)) {
+      const inventory = await searchDocumentInventory(
+        supabase,
+        userId,
+        message,
+        inventoryOpts
+      )
+      if (inventory.length > 0) {
+        usedKnowledge = true
+        sources = inventory.map((s) => ({ ...s, score: 1 }))
+      } else {
+        const catalog = await listUserDocumentCatalog(
+          supabase,
           userId,
-          sessionId: session_id,
-        })
-        noContext = true
-      }
-
-      if (!noContext && scopeDocumentIds && scopeDocumentIds.length === 0) {
-        noContext = true
-      } else if (!noContext) {
-        const questionVector = await embedSingle(message, {
-          userId,
-          purpose: 'embedding_query',
-        })
-        let retrievedChunks: Awaited<ReturnType<typeof hybridSearch>> = []
-        try {
-          retrievedChunks = await hybridSearch(
-            supabase,
-            userId,
-            message,
-            questionVector,
-            RERANK_CANDIDATES,
-            scopeDocumentIds ? { documentIds: scopeDocumentIds } : undefined
-          )
-        } catch (err) {
-          logger.error('RAG search failed', { err, userId, sessionId: session_id })
-          noContext = true
-        }
-
-        const relevantChunks = filterRelevantChunks(retrievedChunks)
-
-        if (relevantChunks.length > 0) {
-          const documentIds = [...new Set(relevantChunks.map((r) => r.payload.document_id))]
-          const { data: docRecords } = await supabase
-            .from('documents')
-            .select('id, filename, file_type')
-            .in('id', documentIds)
-
-          const filenameByDocId = new Map(
-            (docRecords ?? []).map((d) => [d.id, d.filename])
-          )
-          const fileTypeByDocId = new Map(
-            (docRecords ?? []).map((d) => [d.id, d.file_type as string])
-          )
-
-          const resolveFilename = (r: (typeof relevantChunks)[0]) =>
-            resolveDisplayFilename(
-              r.payload.filename,
-              r.payload.document_id,
-              filenameByDocId
-            )
-
-          const reranked = await rerankChunks(message, relevantChunks, resolveFilename)
-          usedKnowledge = reranked.length > 0
-          sources = reranked.map((r) => ({
-            ...r,
-            file_type: fileTypeByDocId.get(r.document_id),
-          }))
-        } else if (isDocumentInventoryQuery(message)) {
-          const inventoryOpts = scopeDocumentIds
-            ? { documentIds: scopeDocumentIds }
-            : undefined
-          const inventory = await searchDocumentInventory(
-            supabase,
-            userId,
-            message,
-            inventoryOpts
-          )
-          if (inventory.length > 0) {
-            usedKnowledge = true
-            sources = inventory.map((s) => ({ ...s, score: 1 }))
-          } else {
-            const catalog = await listUserDocumentCatalog(
-              supabase,
-              userId,
-              inventoryOpts
-            )
-            if (catalog.length > 0) {
-              usedKnowledge = true
-              sources = catalog.map((s) => ({ ...s, score: 1 }))
-            } else {
-              noContext = true
-            }
-          }
+          inventoryOpts
+        )
+        if (catalog.length > 0) {
+          usedKnowledge = true
+          sources = catalog.map((s) => ({ ...s, score: 1 }))
         } else {
           noContext = true
         }
+      }
+    } else {
+      const questionVector = await embedSingle(message, {
+        userId,
+        purpose: 'embedding_query',
+      })
+      let retrievedChunks: Awaited<ReturnType<typeof hybridSearch>> = []
+      try {
+        retrievedChunks = await hybridSearch(
+          supabase,
+          userId,
+          message,
+          questionVector,
+          RERANK_CANDIDATES,
+          scopeDocumentIds ? { documentIds: scopeDocumentIds } : undefined
+        )
+      } catch (err) {
+        logger.error('RAG search failed', { err, userId, sessionId: session_id })
+        noContext = true
+      }
+
+      const relevantChunks = filterRelevantChunks(retrievedChunks)
+
+      if (relevantChunks.length > 0) {
+        const documentIds = [...new Set(relevantChunks.map((r) => r.payload.document_id))]
+        const { data: docRecords } = await supabase
+          .from('documents')
+          .select('id, filename, file_type')
+          .in('id', documentIds)
+
+        const filenameByDocId = new Map(
+          (docRecords ?? []).map((d) => [d.id, d.filename])
+        )
+        const fileTypeByDocId = new Map(
+          (docRecords ?? []).map((d) => [d.id, d.file_type as string])
+        )
+
+        const resolveFilename = (r: (typeof relevantChunks)[0]) =>
+          resolveDisplayFilename(
+            r.payload.filename,
+            r.payload.document_id,
+            filenameByDocId
+          )
+
+        const reranked = await rerankChunks(message, relevantChunks, resolveFilename)
+        usedKnowledge = reranked.length > 0
+        sources = reranked.map((r) => ({
+          ...r,
+          file_type: fileTypeByDocId.get(r.document_id),
+        }))
+      } else {
+        noContext = true
       }
     }
   }
@@ -297,6 +298,13 @@ export async function POST(req: NextRequest) {
     }))
   )
 
+  const scopeRule =
+    scopeDocumentIds === undefined
+      ? ''
+      : scopeDocumentIds.length === 0
+        ? '\n- Người dùng đang lọc theo tag/folder nhưng không có tài liệu nào trong phạm vi đó. Không liệt kê file ngoài phạm vi.'
+        : `\n- Người dùng đang lọc theo tag/folder (${scopeDocumentIds.length} tài liệu). Chỉ trả lời/liệt kê file trong phạm vi đó.`
+
   const systemPrompt = conversational
     ? buildConversationalPrompt()
     : documentManagement
@@ -333,6 +341,7 @@ export async function POST(req: NextRequest) {
     supabase,
     userId,
     sessionId: session_id,
+    documentIds: scopeDocumentIds,
     onPendingAction: (action) => {
       pendingActionCount += 1
       streamData.append({ pending_action: { ...action } })
@@ -356,7 +365,7 @@ export async function POST(req: NextRequest) {
 
   const result = streamText({
     model: anthropic(modelId),
-    system: systemPrompt + '\n' + NOTE_TOOLS_PROMPT,
+    system: systemPrompt + scopeRule + '\n' + NOTE_TOOLS_PROMPT,
     messages: [
       ...historyMessages,
       { role: 'user', content: userContent },
