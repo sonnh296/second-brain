@@ -322,15 +322,33 @@ function DescriptionPanel({
   savingDescription,
   onEditDescription,
   onSaveDescription,
+  allTags,
+  selectedTagIds,
+  savingTags,
+  onTagIdsChange,
+  onSaveTags,
 }: {
   editDescription: string
   savingDescription: boolean
   onEditDescription: (v: string) => void
   onSaveDescription: () => void
+  allTags: Tag[]
+  selectedTagIds: string[]
+  savingTags: boolean
+  onTagIdsChange: (ids: string[]) => void
+  onSaveTags: () => void
 }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+        <DocumentTagEditor
+          allTags={allTags}
+          selectedTagIds={selectedTagIds}
+          saving={savingTags}
+          onChange={onTagIdsChange}
+          onSave={onSaveTags}
+        />
+
         <div>
           <Label className="text-xs text-muted-foreground">Mô tả tài liệu</Label>
           <Textarea
@@ -502,7 +520,7 @@ export function DocumentPreviewPanel({
       <div className="shrink-0 flex border-b overflow-x-auto">
         {tabBtn('content', 'Nội dung')}
         {isMedia && tabBtn('subtitles', 'Phụ đề')}
-        {tabBtn('description', 'Mô tả')}
+        {tabBtn('description', 'Mô tả và tag')}
         {tabBtn('details', 'Chi tiết')}
       </div>
       {saveError && (
@@ -635,20 +653,17 @@ export function DocumentPreviewPanel({
             savingDescription={savingDescription}
             onEditDescription={onEditDescription}
             onSaveDescription={onSaveDescription}
+            allTags={allTags}
+            selectedTagIds={selectedTagIds}
+            savingTags={savingTags}
+            onTagIdsChange={onTagIdsChange}
+            onSaveTags={onSaveTags}
           />
         </div>
 
         <div className={cn('flex-1 min-h-0 overflow-y-auto', tab !== 'details' && 'hidden')}>
           <div className="p-4 space-y-3">
             <div className="flex justify-center py-2">{fileIcon}</div>
-
-            <DocumentTagEditor
-              allTags={allTags}
-              selectedTagIds={selectedTagIds}
-              saving={savingTags}
-              onChange={onTagIdsChange}
-              onSave={onSaveTags}
-            />
 
             <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t">
               <p>Loại: {typeLabels[doc.file_type] ?? doc.file_type}</p>
