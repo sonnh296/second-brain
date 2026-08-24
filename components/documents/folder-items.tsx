@@ -138,6 +138,7 @@ export function FolderGridItem({
   folder,
   onOpen,
   onRename,
+  onEditDescription,
   onDropDocs,
   onDropFolders,
   onDelete,
@@ -151,6 +152,7 @@ export function FolderGridItem({
   folder: FolderType
   onOpen: () => void
   onRename: () => void
+  onEditDescription: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
   onDropFolders?: (targetFolderId: string, folderIds: string[]) => void
   onDelete: () => void
@@ -243,6 +245,17 @@ export function FolderGridItem({
           >
             <Pencil className="h-3 w-3" />
             {t('renameFolder')}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted cursor-pointer"
+            onClick={() => {
+              setMenuOpen(false)
+              onEditDescription()
+            }}
+          >
+            <Pencil className="h-3 w-3" />
+            {t('folderDescription')}
           </button>
           <button
             type="button"

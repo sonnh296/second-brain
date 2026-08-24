@@ -559,3 +559,35 @@
     animation: none !important;
   }
 }
+
+/* Mobile/tablet: reduce ambient animation load to avoid jank. */
+@media (max-width: 1024px) {
+  .guest-wave,
+  .guest-wave-fill,
+  .guest-blob,
+  .guest-drift,
+  .guest-swoosh,
+  .guest-moon,
+  .guest-brand-mark,
+  .guest-card-glow {
+    animation: none !important;
+  }
+
+  .guest-rise {
+    opacity: 1 !important;
+    animation: none !important;
+  }
+
+  /* Blur/drop-shadow is expensive on weaker GPUs; keep the look but lighter. */
+  .guest-blob {
+    filter: blur(18px) !important;
+  }
+
+  .guest-moon {
+    filter: none !important;
+  }
+
+  .guest-grid {
+    opacity: 0.18 !important;
+  }
+}

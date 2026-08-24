@@ -1,13 +1,58 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createServerSupabaseClient } from '@/lib/db/server'
+import { flattenDocumentTags, fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
 import { updateDocumentFilename } from '@/lib/vector'
 import { enqueueIngestionJob } from '@/lib/queue'
-import { fetchTagsForDocument, syncDocumentTags } from '@/lib/db/document-tags'
 import { softDeleteDocument } from '@/lib/documents/soft-delete'
 import { hardDeleteDocument } from '@/lib/documents/hard-delete'
 import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr-status'
 import { logger } from '@/lib/logger'
+
+const DOCUMENT_SELECT = `
+  id, user_id, filename, file_type, r2_key, status, error_message, file_size_bytes, chunk_count,
+  description, note_content, folder_id, deleted_at, is_favorite, created_at,
+  document_tags (
+    tags (id, name, color)
+  )
+`
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createServerSupabaseClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { id: documentId } = await params
+
+  const { data: doc, error } = await supabase
+    .from('documents')
+    .select(DOCUMENT_SELECT)
+    .eq('id', documentId)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .single()
+
+  if (error || !doc) {
+    return NextResponse.json({ error: 'Document not found' }, { status: 404 })
+  }
+
+  const { document_tags, ...rest } = doc as typeof doc & {
+    document_tags?: Parameters<typeof flattenDocumentTags>[0]
+  }
+
+  return NextResponse.json({
+    ...rest,
+    is_favorite: Boolean(rest.is_favorite),
+    tags: flattenDocumentTags(document_tags),
+  })
+}
 
 const UpdateDocumentSchema = z.object({
   filename: z.string().min(1).max(200).optional(),

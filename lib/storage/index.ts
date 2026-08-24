@@ -47,16 +47,30 @@ export async function downloadToFile(
   })
 }
 
-/** Stream an R2 object for download/preview */
+/** Stream an R2 object for download/preview. Optional byte range for media seeking. */
 export async function getObjectStream(
-  key: string
-): Promise<{ stream: Readable; contentType?: string }> {
+  key: string,
+  options?: { range?: string }
+): Promise<{
+  stream: Readable
+  contentType?: string
+  contentLength?: number
+  contentRange?: string
+  acceptRanges?: string
+}> {
   const res = await getS3Client().send(
-    new GetObjectCommand({ Bucket: BUCKET(), Key: key })
+    new GetObjectCommand({
+      Bucket: BUCKET(),
+      Key: key,
+      ...(options?.range ? { Range: options.range } : {}),
+    })
   )
   return {
     stream: res.Body as Readable,
     contentType: res.ContentType,
+    contentLength: res.ContentLength,
+    contentRange: res.ContentRange,
+    acceptRanges: res.AcceptRanges,
   }
 }
 

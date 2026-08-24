@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { StatusBadge } from '@/components/documents/document-grid'
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
+import type { PreviewData } from '@/components/documents/types'
 import { cn } from '@/lib/utils'
 import {
   isBrowserInlineType,
@@ -21,18 +22,7 @@ import type { Document, Tag } from '@/lib/db/types'
 
 type PanelTab = 'content' | 'subtitles' | 'description' | 'details'
 
-interface PreviewData {
-  filename: string
-  file_type: string
-  status: string
-  content: string | null
-  preview_type: string
-  message?: string
-  image_url?: string
-  viewer_url?: string
-  can_inline?: boolean
-  download_url?: string
-}
+export type DocumentPanelTab = PanelTab
 
 interface DocumentPreviewPanelProps {
   doc: Document
@@ -78,7 +68,7 @@ function PreviewBody({ children, className }: { children: React.ReactNode; class
   )
 }
 
-function ContentPreview({
+export function ContentPreview({
   doc,
   preview,
   previewLoading,
@@ -87,6 +77,8 @@ function ContentPreview({
   isActive,
   onEditContent,
   onSaveContent,
+  pdfStartPage,
+  layout = 'panel',
 }: {
   doc: Document
   preview: PreviewData | null
@@ -96,14 +88,21 @@ function ContentPreview({
   isActive: boolean
   onEditContent: (v: string) => void
   onSaveContent: () => void | Promise<void>
+  pdfStartPage?: number
+  layout?: 'panel' | 'page'
 }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null)
 
   useEffect(() => {
     if (!isActive) mediaRef.current?.pause()
   }, [isActive])
-  const viewerUrl = preview?.viewer_url ?? preview?.image_url ?? `/api/documents/${doc.id}/download`
+  const baseViewerUrl =
+    preview?.viewer_url ?? preview?.image_url ?? `/api/documents/${doc.id}/download`
   const fileType = preview?.file_type ?? doc.file_type
+  const viewerUrl =
+    fileType === 'pdf' && pdfStartPage
+      ? `${baseViewerUrl}#page=${pdfStartPage}`
+      : baseViewerUrl
   const isMedia = isTranscribableType(fileType)
   const canEditText =
     !isMedia &&
@@ -139,11 +138,14 @@ function ContentPreview({
 
   if (fileType === 'pdf') {
     return (
-      <PreviewBody>
+      <PreviewBody className={layout === 'page' ? 'min-h-[50vh]' : undefined}>
         <iframe
           src={viewerUrl}
           title={preview?.filename ?? doc.filename}
-          className="flex-1 w-full min-h-[300px] border-0 bg-background"
+          className={cn(
+            'flex-1 w-full border-0 bg-background',
+            layout === 'page' ? 'min-h-[50vh]' : 'min-h-[300px]'
+          )}
         />
       </PreviewBody>
     )
@@ -151,13 +153,16 @@ function ContentPreview({
 
   if (isImageType(fileType)) {
     return (
-      <PreviewBody>
+      <PreviewBody className={layout === 'page' ? 'min-h-[40vh]' : undefined}>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={preview?.image_url ?? viewerUrl}
             alt={preview?.filename ?? doc.filename}
-            className="w-full max-h-[min(50vh,420px)] rounded border object-contain bg-background mx-auto"
+            className={cn(
+              'w-full rounded border object-contain bg-background mx-auto',
+              layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,420px)]'
+            )}
           />
           {preview?.content &&
             (canEditText ? (
@@ -192,13 +197,17 @@ function ContentPreview({
 
   if (fileType === 'mp4' || fileType === 'mov') {
     return (
-      <PreviewBody>
+      <PreviewBody className={layout === 'page' ? 'min-h-[50vh]' : undefined}>
         <div className="flex-1 min-h-0 flex items-center justify-center p-4">
           <video
             ref={mediaRef as React.RefObject<HTMLVideoElement>}
             src={viewerUrl}
             controls
-            className="w-full max-h-full rounded border bg-black"
+            preload="metadata"
+            className={cn(
+              'w-full rounded border bg-black',
+              layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-full'
+            )}
           />
         </div>
       </PreviewBody>
@@ -213,6 +222,7 @@ function ContentPreview({
             ref={mediaRef as React.RefObject<HTMLAudioElement>}
             src={viewerUrl}
             controls
+            preload="metadata"
             className="w-full"
           />
         </div>
@@ -260,7 +270,7 @@ function ContentPreview({
   )
 }
 
-function SubtitlesPanel({
+export function SubtitlesPanel({
   preview,
   previewLoading,
   status,
@@ -317,7 +327,7 @@ function SubtitlesPanel({
   )
 }
 
-function DescriptionPanel({
+export function DescriptionPanel({
   editDescription,
   savingDescription,
   onEditDescription,
@@ -458,7 +468,7 @@ export function DocumentPreviewPanel({
   )
 
   return (
-    <div className="w-full sm:w-[min(100vw-2rem,28rem)] lg:w-lg shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
+    <div className="w-full shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
       <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {editingName ? (

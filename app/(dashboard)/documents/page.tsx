@@ -166,6 +166,10 @@ export default function DocumentsPage() {
   const [renameFolderDescription, setRenameFolderDescription] = useState("");
   const [renameFolderError, setRenameFolderError] = useState("");
   const [savingFolderName, setSavingFolderName] = useState(false);
+  const [editingFolderDescription, setEditingFolderDescription] = useState<Folder | null>(null);
+  const [folderDescriptionDraft, setFolderDescriptionDraft] = useState("");
+  const [folderDescriptionError, setFolderDescriptionError] = useState("");
+  const [savingFolderDescription, setSavingFolderDescription] = useState(false);
   const [reprocessingOcr, setReprocessingOcr] = useState(false);
   const [keepingWeakOcr, setKeepingWeakOcr] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
@@ -451,6 +455,45 @@ export default function DocumentsPage() {
     setRenameFolderName("");
     setRenameFolderDescription("");
     setRenameFolderError("");
+  }
+
+  function openEditFolderDescription(folder: Folder) {
+    setEditingFolderDescription(folder);
+    setFolderDescriptionDraft(folder.description ?? "");
+    setFolderDescriptionError("");
+  }
+
+  function closeEditFolderDescription() {
+    if (savingFolderDescription) return;
+    setEditingFolderDescription(null);
+    setFolderDescriptionDraft("");
+    setFolderDescriptionError("");
+  }
+
+  async function saveFolderDescription() {
+    if (!editingFolderDescription) return;
+    setSavingFolderDescription(true);
+    setFolderDescriptionError("");
+
+    const res = await fetch(`/api/folders/${editingFolderDescription.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description: folderDescriptionDraft.trim() || null,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setFolderDescriptionError(data.error ?? "Không thể lưu mô tả thư mục");
+      setSavingFolderDescription(false);
+      return;
+    }
+
+    setSavingFolderDescription(false);
+    setEditingFolderDescription(null);
+    setFolderDescriptionDraft("");
+    await refreshFolderView(currentFolderId);
   }
 
   async function renameFolder() {
@@ -1191,6 +1234,59 @@ export default function DocumentsPage() {
           </div>
           {renameFolderError && (
             <p className="text-sm text-destructive">{renameFolderError}</p>
+          )}
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={editingFolderDescription !== null}
+        title={td("folderDescription")}
+        onClose={closeEditFolderDescription}
+        footer={
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={savingFolderDescription}
+              onClick={closeEditFolderDescription}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button
+              type="submit"
+              form="edit-folder-description-form"
+              size="sm"
+              disabled={savingFolderDescription}
+            >
+              {savingFolderDescription ? td("renaming") : tc("save")}
+            </Button>
+          </>
+        }
+      >
+        <form
+          id="edit-folder-description-form"
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveFolderDescription();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-folder-description">{td("folderDescription")}</Label>
+            <Textarea
+              id="edit-folder-description"
+              value={folderDescriptionDraft}
+              onChange={(event) => setFolderDescriptionDraft(event.target.value)}
+              maxLength={MAX_FOLDER_DESCRIPTION_LENGTH}
+              rows={4}
+              placeholder={td("folderDescriptionPlaceholder")}
+              disabled={savingFolderDescription}
+            />
+          </div>
+
+          {folderDescriptionError && (
+            <p className="text-sm text-destructive">{folderDescriptionError}</p>
           )}
         </form>
       </Dialog>
@@ -1993,6 +2089,7 @@ export default function DocumentsPage() {
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
                             onRename={() => openRenameFolder(folder)}
+                            onEditDescription={() => openEditFolderDescription(folder)}
                             onDropDocs={(folderId, docIds) =>
                               void moveDocsToFolder(folderId, docIds)
                             }
@@ -2097,9 +2194,9 @@ export default function DocumentsPage() {
             )}
           </div>
 
-          {/* Preview panel — full screen on mobile */}
+          {/* Overlay so the file grid keeps its size (no column reflow). */}
           {selectedDoc && (
-            <div className="absolute inset-0 z-20 sm:static sm:z-auto flex min-h-0 bg-background">
+            <div className="absolute inset-0 z-20 flex min-h-0 bg-background sm:inset-y-0 sm:left-auto sm:w-[min(100vw-2rem,28rem)] lg:w-lg sm:bg-background sm:shadow-[-12px_0_24px_-12px_rgba(0,0,0,0.12)]">
               <DocumentPreviewPanel
                 doc={selectedDoc}
                 preview={preview}

@@ -435,15 +435,6 @@ export default function ChatPage() {
     })
   }
 
-  function openCitationImage(src: CitedSource) {
-    if (!src.document_id) return
-    setPreviewModal({
-      open: true,
-      src: `/api/documents/${src.document_id}/download`,
-      filename: src.filename,
-    })
-  }
-
   function openAttachmentImage(att: MessageAttachmentMeta) {
     setPreviewModal({
       open: true,
@@ -741,7 +732,6 @@ export default function ChatPage() {
                               <SourceBadge
                                 key={src.document_id || src.filename}
                                 src={src}
-                                onImageClick={openCitationImage}
                               />
                             ))}
                           </div>
