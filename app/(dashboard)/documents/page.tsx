@@ -28,7 +28,10 @@ import {
   DriveListItem,
   DocumentThumb,
 } from "@/components/documents/document-grid";
-import { DocumentPreviewPanel } from "@/components/documents/document-preview-panel";
+import {
+  DocumentPreviewPanel,
+  getContentEditState,
+} from "@/components/documents/document-preview-panel";
 import { NoteModal } from "@/components/documents/note-modal";
 import { FileDropzone } from "@/components/documents/file-dropzone";
 import { TagManager } from "@/components/documents/tag-manager";
@@ -124,7 +127,7 @@ const SIDEBAR_TYPES: {
 export default function DocumentsPage() {
   const td = useTranslations("documents");
   const tc = useTranslations("common");
-  const { confirm, dialog: confirmDialog } = useConfirm();
+  const { confirm, confirmChoice, dialog: confirmDialog } = useConfirm();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -871,14 +874,74 @@ export default function DocumentsPage() {
     setPreview(null);
   }
 
+  function hasUnsavedPreviewChanges() {
+    if (!selectedDoc) return false
+    const nameDirty = editName.trim() !== selectedDoc.filename
+    const descDirty =
+      (editDescription.trim() || '') !== (selectedDoc.description?.trim() || '')
+    const savedTagIds = (selectedDoc.tags?.map((t) => t.id) ?? []).slice().sort().join(',')
+    const currentTagIds = [...selectedTagIds].sort().join(',')
+    const tagsDirty = savedTagIds !== currentTagIds
+    const { canEditText, hasContentChanges } = getContentEditState(
+      selectedDoc,
+      preview,
+      editContent
+    )
+    return nameDirty || descDirty || tagsDirty || (canEditText && hasContentChanges)
+  }
+
+  async function requestClosePreview() {
+    if (!selectedDoc) return
+    if (!hasUnsavedPreviewChanges()) {
+      closePreview()
+      return
+    }
+
+    const choice = await confirmChoice({
+      title: 'Có thay đổi chưa lưu',
+      description: 'Bạn có muốn lưu trước khi đóng không?',
+      confirmLabel: 'Lưu',
+      discardLabel: 'Không lưu',
+      cancelLabel: 'Ở lại',
+      variant: 'default',
+    })
+
+    if (choice === 'cancel') return
+
+    if (choice === 'confirm') {
+      const nameDirty = editName.trim() !== selectedDoc.filename
+      const descDirty =
+        (editDescription.trim() || '') !== (selectedDoc.description?.trim() || '')
+      const savedTagIds = (selectedDoc.tags?.map((t) => t.id) ?? []).slice().sort().join(',')
+      const currentTagIds = [...selectedTagIds].sort().join(',')
+      const tagsDirty = savedTagIds !== currentTagIds
+      const { canEditText, hasContentChanges } = getContentEditState(
+        selectedDoc,
+        preview,
+        editContent
+      )
+
+      let ok = true
+      if (nameDirty) ok = (await saveName()) && ok
+      if (descDirty) ok = (await saveDescription()) && ok
+      if (tagsDirty) ok = (await saveTags()) && ok
+      if (canEditText && hasContentChanges) ok = (await saveContent()) && ok
+      if (!ok) return
+    }
+
+    closePreview()
+  }
+
   useEffect(() => {
     if (!selectedDoc) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') closePreview()
+      if (e.key === 'Escape') void requestClosePreview()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedDoc])
+    // Intentionally re-bind when draft fields change so Escape sees latest dirty state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDoc, editName, editDescription, editContent, selectedTagIds, preview])
 
   function handleDocDragStart(doc: Document, e: React.DragEvent) {
     const idsToDrag =
@@ -985,8 +1048,8 @@ export default function DocumentsPage() {
   }
 
 
-  async function saveName() {
-    if (!selectedDoc) return;
+  async function saveName(): Promise<boolean> {
+    if (!selectedDoc) return false;
     setPanelSaveError("");
     setSavingName(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
@@ -999,15 +1062,17 @@ export default function DocumentsPage() {
     if (res.ok) {
       setSelectedDoc(await res.json());
       await refreshFolderView(currentFolderId);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setPanelSaveError(data.error ?? "Không thể lưu tên tài liệu");
+      setSavingName(false);
+      return true;
     }
+    const data = await res.json().catch(() => ({}));
+    setPanelSaveError(data.error ?? "Không thể lưu tên tài liệu");
     setSavingName(false);
+    return false;
   }
 
-  async function saveDescription() {
-    if (!selectedDoc) return;
+  async function saveDescription(): Promise<boolean> {
+    if (!selectedDoc) return false;
     setPanelSaveError("");
     setSavingDescription(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
@@ -1020,19 +1085,21 @@ export default function DocumentsPage() {
     if (res.ok) {
       setSelectedDoc(await res.json());
       await refreshFolderView(currentFolderId);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setPanelSaveError(data.error ?? "Không thể lưu mô tả");
+      setSavingDescription(false);
+      return true;
     }
+    const data = await res.json().catch(() => ({}));
+    setPanelSaveError(data.error ?? "Không thể lưu mô tả");
     setSavingDescription(false);
+    return false;
   }
 
-  async function saveContent() {
-    if (!selectedDoc) return;
+  async function saveContent(): Promise<boolean> {
+    if (!selectedDoc) return false;
     const content = editContent.trim();
     if (!content) {
       setPanelSaveError("Nội dung không được để trống");
-      return;
+      return false;
     }
     setPanelSaveError("");
     setSavingContent(true);
@@ -1057,15 +1124,17 @@ export default function DocumentsPage() {
           : prev,
       );
       await refreshFolderView(currentFolderId);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setPanelSaveError(data.error ?? "Không thể lưu nội dung đã chỉnh sửa");
+      setSavingContent(false);
+      return true;
     }
+    const data = await res.json().catch(() => ({}));
+    setPanelSaveError(data.error ?? "Không thể lưu nội dung đã chỉnh sửa");
     setSavingContent(false);
+    return false;
   }
 
-  async function saveTags() {
-    if (!selectedDoc) return;
+  async function saveTags(): Promise<boolean> {
+    if (!selectedDoc) return false;
     setSavingTags(true);
     const res = await fetch(`/api/documents/${selectedDoc.id}`, {
       method: "PATCH",
@@ -1076,8 +1145,11 @@ export default function DocumentsPage() {
       const updated = await res.json();
       setSelectedDoc(updated);
       await refreshFolderView(currentFolderId);
+      setSavingTags(false);
+      return true;
     }
     setSavingTags(false);
+    return false;
   }
 
   async function reprocessOcr() {
@@ -2203,7 +2275,7 @@ export default function DocumentsPage() {
           {selectedDoc && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50"
-              onClick={closePreview}
+              onClick={() => void requestClosePreview()}
               role="presentation"
             >
               <div
@@ -2230,7 +2302,7 @@ export default function DocumentsPage() {
                   allTags={tags}
                   selectedTagIds={selectedTagIds}
                   savingTags={savingTags}
-                  onClose={closePreview}
+                  onClose={() => void requestClosePreview()}
                   onEditName={setEditName}
                   onEditDescription={setEditDescription}
                   onEditContent={setEditContent}

@@ -195,7 +195,7 @@ interface DocumentTagEditorProps {
   selectedTagIds: string[]
   saving: boolean
   onChange: (tagIds: string[]) => void
-  onSave: () => void
+  onSave: () => void | Promise<void | boolean>
 }
 
 export function DocumentTagEditor({

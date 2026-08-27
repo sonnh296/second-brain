@@ -9,11 +9,15 @@ export type ConfirmOptions = {
   description?: string
   confirmLabel?: string
   cancelLabel?: string
+  /** When set, shows a third action (e.g. "Không lưu") between cancel and confirm. */
+  discardLabel?: string
   variant?: 'default' | 'destructive'
 }
 
+export type ConfirmChoice = 'confirm' | 'discard' | 'cancel'
+
 type ConfirmState = ConfirmOptions & {
-  resolve: (value: boolean) => void
+  resolve: (value: ConfirmChoice) => void
 }
 
 export function ConfirmDialog({
@@ -22,13 +26,16 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Xác nhận',
   cancelLabel = 'Hủy',
+  discardLabel,
   variant = 'destructive',
   onConfirm,
   onCancel,
+  onDiscard,
 }: ConfirmOptions & {
   open: boolean
   onConfirm: () => void
   onCancel: () => void
+  onDiscard?: () => void
 }) {
   if (!open) return null
 
@@ -57,10 +64,15 @@ export function ConfirmDialog({
             <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
           </CardContent>
         )}
-        <CardFooter className="justify-end gap-2">
+        <CardFooter className="justify-end gap-2 flex-wrap">
           <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
             {cancelLabel}
           </Button>
+          {discardLabel && onDiscard && (
+            <Button type="button" variant="outline" size="sm" onClick={onDiscard}>
+              {discardLabel}
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
@@ -79,16 +91,25 @@ export function ConfirmDialog({
 export function useConfirm() {
   const [state, setState] = useState<ConfirmState | null>(null)
 
-  const confirm = useCallback((opts: ConfirmOptions) => {
-    return new Promise<boolean>((resolve) => {
-      setState({ ...opts, resolve })
-    })
-  }, [])
-
-  const close = useCallback((value: boolean) => {
+  const close = useCallback((value: ConfirmChoice) => {
     setState((prev) => {
       prev?.resolve(value)
       return null
+    })
+  }, [])
+
+  const confirm = useCallback((opts: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setState({
+        ...opts,
+        resolve: (choice) => resolve(choice === 'confirm'),
+      })
+    })
+  }, [])
+
+  const confirmChoice = useCallback((opts: ConfirmOptions) => {
+    return new Promise<ConfirmChoice>((resolve) => {
+      setState({ ...opts, resolve })
     })
   }, [])
 
@@ -99,11 +120,13 @@ export function useConfirm() {
       description={state?.description}
       confirmLabel={state?.confirmLabel}
       cancelLabel={state?.cancelLabel}
+      discardLabel={state?.discardLabel}
       variant={state?.variant}
-      onConfirm={() => close(true)}
-      onCancel={() => close(false)}
+      onConfirm={() => close('confirm')}
+      onCancel={() => close('cancel')}
+      onDiscard={state?.discardLabel ? () => close('discard') : undefined}
     />
   )
 
-  return { confirm, dialog }
+  return { confirm, confirmChoice, dialog }
 }

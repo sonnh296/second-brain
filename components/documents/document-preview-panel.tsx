@@ -45,11 +45,11 @@ interface DocumentPreviewPanelProps {
   onEditName: (v: string) => void
   onEditDescription: (v: string) => void
   onEditContent: (v: string) => void
-  onSaveName: () => void | Promise<void>
-  onSaveDescription: () => void | Promise<void>
-  onSaveContent: () => void | Promise<void>
+  onSaveName: () => void | Promise<void | boolean>
+  onSaveDescription: () => void | Promise<void | boolean>
+  onSaveContent: () => void | Promise<void | boolean>
   onTagIdsChange: (ids: string[]) => void
-  onSaveTags: () => void
+  onSaveTags: () => void | Promise<void | boolean>
   onReprocessOcr?: () => void
   reprocessingOcr?: boolean
   onReupload?: () => void
@@ -153,7 +153,7 @@ export function ContentPreviewFooter({
   preview: PreviewData | null
   editContent: string
   savingContent: boolean
-  onSaveContent: () => void | Promise<void>
+  onSaveContent: () => void | Promise<void | boolean>
   viewerUrl: string
   canInline: boolean
   canOpenDownload: boolean
@@ -170,7 +170,7 @@ export function ContentPreviewFooter({
           size="default"
           onClick={() => void onSaveContent()}
           disabled={savingContent || !hasContentChanges}
-          className="gap-2 shrink-0"
+          className="flex-1 gap-2"
         >
           {savingContent ? 'Đang lưu...' : 'Lưu'}
         </Button>
@@ -189,11 +189,7 @@ export function ContentPreviewFooter({
       {showDownload && (
         <a
           href={`${viewerUrl}?download=1`}
-          className={cn(
-            buttonVariants({ variant: 'default', size: 'default' }),
-            canInline ? 'flex-1' : 'flex-1',
-            'gap-2'
-          )}
+          className={cn(buttonVariants({ variant: 'default', size: 'default' }), 'flex-1 gap-2')}
         >
           <Download className="h-4 w-4" />
           Tải về
@@ -480,12 +476,12 @@ export function DescriptionPanel({
   editDescription: string
   savingDescription: boolean
   onEditDescription: (v: string) => void
-  onSaveDescription: () => void
+  onSaveDescription: () => void | Promise<void | boolean>
   allTags: Tag[]
   selectedTagIds: string[]
   savingTags: boolean
   onTagIdsChange: (ids: string[]) => void
-  onSaveTags: () => void
+  onSaveTags: () => void | Promise<void | boolean>
 }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
