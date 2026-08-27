@@ -81,7 +81,7 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
         onDrop={onDrop}
         onClick={() => !disabled && inputRef.current?.click()}
         className={cn(
-          'relative flex min-h-[9.5rem] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 transition-colors cursor-pointer',
+          'relative flex min-h-[14rem] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-10 transition-colors cursor-pointer',
           dragOver
             ? 'border-primary bg-primary/5'
             : 'border-muted-foreground/30 bg-background hover:border-primary/50 hover:bg-muted/30',
@@ -104,7 +104,7 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
               <img
                 src={imagePreviewUrl}
                 alt={selectedFile.name}
-                className="max-h-48 w-auto max-w-full rounded-md border object-contain bg-muted/40"
+                className="max-h-64 w-auto max-w-full rounded-md border object-contain bg-muted/40"
               />
             ) : (
               <FileIcon className="h-8 w-8 text-primary shrink-0" />

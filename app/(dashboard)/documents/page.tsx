@@ -28,12 +28,9 @@ import {
   DriveListItem,
   DocumentThumb,
 } from "@/components/documents/document-grid";
-import {
-  DocumentPreviewPanel,
-  getContentEditState,
-} from "@/components/documents/document-preview-panel";
+import { DocumentPreviewPanel, getContentEditState } from "@/components/documents/document-preview-panel";
 import { NoteModal } from "@/components/documents/note-modal";
-import { FileDropzone } from "@/components/documents/file-dropzone";
+import { UploadModal } from "@/components/documents/upload-modal";
 import { TagManager } from "@/components/documents/tag-manager";
 import { FileIcon } from "@/components/documents/file-icon";
 import type {
@@ -60,7 +57,6 @@ import { useTrash } from "@/hooks/use-trash";
 import {
   TYPE_LABELS,
   isImageType,
-  MAX_DOCUMENT_DESCRIPTION_LENGTH,
   MAX_FOLDER_DESCRIPTION_LENGTH,
 } from "@/lib/upload/file-types";
 import { canReuploadDocument } from "@/lib/documents/can-reupload";
@@ -133,8 +129,9 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState("");
-  const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadDescription, setUploadDescription] = useState("");
+  const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reuploadDoc, setReuploadDoc] = useState<Document | null>(null);
   const [tags, setTags] = useState<TagType[]>([]);
@@ -698,21 +695,31 @@ export default function DocumentsPage() {
     setReuploadDoc(doc);
     setSelectedFile(null);
     setUploadDescription("");
+    setUploadTagIds([]);
     setUploadError("");
     setUploadProgress(null);
     setShowNewFolder(false);
-    setShowUploadPanel(true);
+    setShowUploadModal(true);
   }
 
-  async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  function closeUploadModal() {
+    if (uploading) return;
+    setShowUploadModal(false);
+    setSelectedFile(null);
+    setUploadDescription("");
+    setUploadTagIds([]);
+    setUploadError("");
+    setUploadProgress(null);
+    setReuploadDoc(null);
+  }
+
+  async function handleUpload() {
     if (!selectedFile) return;
     setUploading(true);
     setUploadError("");
     setUploadProgress(0);
 
     try {
-      // 1. Presign: create a new record, or replace an existing failed record.
       const presignRes = await fetch(
         reuploadDoc
           ? `/api/documents/${reuploadDoc.id}/reupload`
@@ -740,7 +747,6 @@ export default function DocumentsPage() {
         throw new Error(presign.error ?? "Upload failed");
       }
 
-      // 2. Upload straight to R2 — the file never passes through our server
       await putToR2WithProgress(
         presign.upload_url,
         selectedFile,
@@ -748,7 +754,6 @@ export default function DocumentsPage() {
         setUploadProgress,
       );
 
-      // 3. Complete: server verifies the object and queues processing (transcribe once)
       const completeUrl = reuploadDoc
         ? `/api/documents/${reuploadDoc.id}/reupload/complete`
         : "/api/upload/complete";
@@ -758,7 +763,6 @@ export default function DocumentsPage() {
         body: JSON.stringify({ document_id: presign.document_id }),
       });
       if (!completeRes.ok && completeRes.status === 400) {
-        // One retry — R2 head can briefly lag after a large PUT
         await new Promise((r) => setTimeout(r, 1500));
         completeRes = await fetch(completeUrl, {
           method: "POST",
@@ -771,7 +775,14 @@ export default function DocumentsPage() {
         throw new Error(complete.error ?? "Upload failed");
       }
 
-      // Wait until worker finishes (transcribe once → save to DB)
+      if (!reuploadDoc && uploadTagIds.length > 0) {
+        await fetch(`/api/documents/${presign.document_id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tag_ids: uploadTagIds }),
+        });
+      }
+
       const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name);
       if (isMedia && !reuploadDoc) {
         await waitForDocumentProcessing(presign.document_id);
@@ -785,9 +796,10 @@ export default function DocumentsPage() {
     setUploading(false);
     setUploadProgress(null);
     setUploadDescription("");
+    setUploadTagIds([]);
     setSelectedFile(null);
     setReuploadDoc(null);
-    setShowUploadPanel(false);
+    setShowUploadModal(false);
     await refreshFolderView(currentFolderId);
   }
 
@@ -1692,7 +1704,11 @@ export default function DocumentsPage() {
                     setAddMenuOpen(false);
                     setShowNewFolder(false);
                     setReuploadDoc(null);
-                    setShowUploadPanel(true);
+                    setUploadDescription("");
+                    setUploadTagIds([]);
+                    setSelectedFile(null);
+                    setUploadError("");
+                    setShowUploadModal(true);
                   }}
                 >
                   <Upload className="h-4 w-4 text-muted-foreground" />
@@ -1704,7 +1720,7 @@ export default function DocumentsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer text-left"
                   onClick={() => {
                     setAddMenuOpen(false);
-                    setShowUploadPanel(false);
+                    setShowUploadModal(false);
                     setShowNewFolder(true);
                   }}
                 >
@@ -1717,7 +1733,7 @@ export default function DocumentsPage() {
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted cursor-pointer text-left"
                   onClick={() => {
                     setAddMenuOpen(false);
-                    setShowUploadPanel(false);
+                    setShowUploadModal(false);
                     setShowNewFolder(false);
                     openCreateNoteModal();
                   }}
@@ -1889,89 +1905,6 @@ export default function DocumentsPage() {
                 className="mt-1 text-sm"
               />
             </div>
-          </div>
-        )}
-
-        {showUploadPanel && (
-          <div className="shrink-0 border-b bg-muted/30 px-4 py-4">
-            <form
-              onSubmit={handleUpload}
-              className="flex w-full flex-col gap-4"
-            >
-              {reuploadDoc && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-                  {td("reuploadNotice", { filename: reuploadDoc.filename })}
-                </div>
-              )}
-              <FileDropzone
-                disabled={uploading}
-                selectedFile={selectedFile}
-                onFileSelect={setSelectedFile}
-              />
-              {!reuploadDoc && (
-                <div className="w-full">
-                  <Label className="text-xs">Mô tả (tuỳ chọn)</Label>
-                  <Textarea
-                    value={uploadDescription}
-                    onChange={(e) => setUploadDescription(e.target.value)}
-                    placeholder="Thêm mô tả để dễ tìm lại tài liệu sau này..."
-                    rows={4}
-                    maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
-                    className="mt-1.5 w-full resize-y text-sm min-h-24"
-                  />
-                </div>
-              )}
-              {uploading && uploadProgress !== null && (
-                <div className="w-full">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>
-                      {uploadProgress < 100
-                        ? "Đang tải lên..."
-                        : "Đang tạo phụ đề (một lần)..."}
-                    </span>
-                    <span>
-                      {uploadProgress < 100 ? `${uploadProgress}%` : "..."}
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-300"
-                      style={{
-                        width:
-                          uploadProgress < 100 ? `${uploadProgress}%` : "100%",
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={uploading || !selectedFile}
-                >
-                  {uploading ? "Đang upload..." : "Tải lên"}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setShowUploadPanel(false);
-                    setSelectedFile(null);
-                    setUploadDescription("");
-                    setUploadError("");
-                    setUploadProgress(null);
-                    setReuploadDoc(null);
-                  }}
-                >
-                  Đóng
-                </Button>
-              </div>
-            </form>
-            {uploadError && (
-              <p className="text-sm text-destructive mt-2">{uploadError}</p>
-            )}
           </div>
         )}
 
@@ -2279,7 +2212,7 @@ export default function DocumentsPage() {
               role="presentation"
             >
               <div
-                className="w-full max-w-3xl lg:max-w-4xl h-[min(92vh,900px)] rounded-xl border bg-background shadow-xl overflow-hidden flex flex-col"
+                className="w-full max-w-4xl lg:max-w-5xl h-[min(92vh,900px)] rounded-xl border bg-background shadow-xl overflow-hidden flex flex-col"
                 onClick={(e) => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -2348,6 +2281,23 @@ export default function DocumentsPage() {
           onClose={closeNoteModal}
         />
       )}
+
+      <UploadModal
+        open={showUploadModal}
+        reuploadDoc={reuploadDoc}
+        selectedFile={selectedFile}
+        description={uploadDescription}
+        tagIds={uploadTagIds}
+        allTags={tags}
+        uploading={uploading}
+        uploadProgress={uploadProgress}
+        error={uploadError}
+        onFileSelect={setSelectedFile}
+        onDescriptionChange={setUploadDescription}
+        onTagIdsChange={setUploadTagIds}
+        onSubmit={handleUpload}
+        onClose={closeUploadModal}
+      />
 
       {showTagManager && (
         <TagManager

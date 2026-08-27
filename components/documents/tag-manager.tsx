@@ -195,7 +195,9 @@ interface DocumentTagEditorProps {
   selectedTagIds: string[]
   saving: boolean
   onChange: (tagIds: string[]) => void
-  onSave: () => void | Promise<void | boolean>
+  onSave?: () => void | Promise<void | boolean>
+  /** Hide the inline save button when parent handles persistence. */
+  hideSaveButton?: boolean
 }
 
 export function DocumentTagEditor({
@@ -204,6 +206,7 @@ export function DocumentTagEditor({
   saving,
   onChange,
   onSave,
+  hideSaveButton = false,
 }: DocumentTagEditorProps) {
   function toggleTag(tagId: string) {
     if (selectedTagIds.includes(tagId)) {
@@ -238,9 +241,11 @@ export function DocumentTagEditor({
           })}
         </div>
       )}
-      <Button size="sm" variant="outline" className="w-full" onClick={onSave} disabled={saving}>
-        {saving ? 'Đang lưu...' : 'Lưu tag'}
-      </Button>
+      {!hideSaveButton && onSave && (
+        <Button size="sm" variant="outline" className="w-full" onClick={onSave} disabled={saving}>
+          {saving ? 'Đang lưu...' : 'Lưu tag'}
+        </Button>
+      )}
     </div>
   )
 }

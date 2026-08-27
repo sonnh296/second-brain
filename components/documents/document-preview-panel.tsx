@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Download, ExternalLink, Pencil, Upload, X } from 'lucide-react'
+import { Download, ExternalLink, Pencil, Upload, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -118,6 +118,203 @@ function AssetPreviewFrame({
         </div>
       )}
       {children}
+    </div>
+  )
+}
+
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 5
+const ZOOM_STEP = 0.25
+
+function clampZoomScale(value: number) {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(value * 100) / 100))
+}
+
+function ZoomableImage({
+  src,
+  alt,
+  loading,
+  onLoad,
+  onError,
+  maxHeightClass,
+}: {
+  src: string
+  alt: string
+  loading: boolean
+  onLoad: () => void
+  onError: () => void
+  maxHeightClass: string
+}) {
+  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{
+    active: boolean
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  }>({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+  const viewportRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setScale(1)
+    setOffset({ x: 0, y: 0 })
+  }, [src])
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    function onNativeWheel(e: WheelEvent) {
+      e.preventDefault()
+      const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
+      setScale((prev) => {
+        const next = clampZoomScale(prev + delta)
+        if (next === prev) return prev
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const cx = e.clientX - rect.left - rect.width / 2
+          const cy = e.clientY - rect.top - rect.height / 2
+          const ratio = next / prev
+          setOffset((o) => ({
+            x: cx - (cx - o.x) * ratio,
+            y: cy - (cy - o.y) * ratio,
+          }))
+        }
+        if (next <= 1) setOffset({ x: 0, y: 0 })
+        return next
+      })
+    }
+    el.addEventListener('wheel', onNativeWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onNativeWheel)
+  }, [])
+
+  function zoomBy(delta: number) {
+    setScale((prev) => {
+      const next = clampZoomScale(prev + delta)
+      if (next <= 1) setOffset({ x: 0, y: 0 })
+      return next
+    })
+  }
+
+  function resetZoom() {
+    setScale(1)
+    setOffset({ x: 0, y: 0 })
+  }
+
+  function onPointerDown(e: React.PointerEvent) {
+    if (scale <= 1) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: offset.x,
+      originY: offset.y,
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!dragRef.current.active) return
+    setOffset({
+      x: dragRef.current.originX + (e.clientX - dragRef.current.startX),
+      y: dragRef.current.originY + (e.clientY - dragRef.current.startY),
+    })
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    dragRef.current.active = false
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function onDoubleClick() {
+    if (scale > 1) {
+      resetZoom()
+      return
+    }
+    setScale(2)
+  }
+
+  return (
+    <div className="relative flex flex-col min-h-0 flex-1 gap-2">
+      <div
+        ref={viewportRef}
+        className={cn(
+          'relative flex-1 min-h-[200px] overflow-hidden rounded border bg-muted/20 touch-none select-none',
+          scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'
+        )}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={onDoubleClick}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          onLoad={onLoad}
+          onError={onError}
+          className={cn(
+            'absolute left-1/2 top-1/2 object-contain bg-background will-change-transform transition-opacity duration-200',
+            maxHeightClass,
+            loading && 'opacity-0'
+          )}
+          style={{
+            width: 'auto',
+            maxWidth: scale <= 1 ? '100%' : 'none',
+            height: 'auto',
+            transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px)) scale(${scale})`,
+            transformOrigin: 'center center',
+          }}
+        />
+      </div>
+      <div className="shrink-0 flex items-center justify-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-8 p-0"
+          onClick={() => zoomBy(-ZOOM_STEP)}
+          disabled={scale <= ZOOM_MIN}
+          aria-label="Thu nhỏ"
+          title="Thu nhỏ (hoặc lăn chuột)"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
+          {Math.round(scale * 100)}%
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 w-8 p-0"
+          onClick={() => zoomBy(ZOOM_STEP)}
+          disabled={scale >= ZOOM_MAX}
+          aria-label="Phóng to"
+          title="Phóng to (hoặc lăn chuột)"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 px-2 text-xs"
+          onClick={resetZoom}
+          disabled={scale === 1 && offset.x === 0 && offset.y === 0}
+          aria-label="Đặt lại zoom"
+          title="Đặt lại 100%"
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1" />
+          100%
+        </Button>
+      </div>
     </div>
   )
 }
@@ -288,26 +485,24 @@ export function ContentPreview({
   if (isImageType(fileType)) {
     return (
       <PreviewBody className={layout === 'page' ? 'min-h-[40vh]' : undefined}>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 flex flex-col">
           <AssetPreviewFrame
             loading={assetLoading}
             loadingLabel="Đang tải ảnh..."
             className={cn(
-              'min-h-[200px] rounded border bg-muted/20',
-              layout === 'page' ? 'min-h-[min(40vh,320px)]' : 'min-h-[min(35vh,280px)]'
+              'min-h-[240px]',
+              layout === 'page' ? 'min-h-[min(50vh,420px)]' : 'min-h-[min(40vh,320px)]'
             )}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <ZoomableImage
               src={preview?.image_url ?? viewerUrl}
               alt={preview?.filename ?? doc.filename}
+              loading={assetLoading}
               onLoad={() => setAssetLoading(false)}
               onError={() => setAssetLoading(false)}
-              className={cn(
-                'w-full rounded border object-contain bg-background mx-auto transition-opacity duration-200',
-                layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,420px)]',
-                assetLoading && 'opacity-0'
-              )}
+              maxHeightClass={
+                layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,480px)]'
+              }
             />
           </AssetPreviewFrame>
           {preview?.content &&
