@@ -65,15 +65,14 @@ function LoginForm() {
     if (data.role === 'admin') {
       router.push('/admin')
     } else {
-      router.push('/documents')
+      router.push('/home')
     }
     router.refresh()
   }
 
   return (
-    <div className="guest-card relative overflow-hidden rounded-2xl border border-border/80 bg-background/80 backdrop-blur-md shadow-[0_12px_48px_-16px_rgba(15,23,42,0.18)] p-6 sm:p-7">
-      <div className="guest-card-glow pointer-events-none absolute -top-16 right-[-20%] h-40 w-40 rounded-full bg-slate-300/30 blur-3xl" />
-      <div className="relative mb-6">
+    <div className="rounded-2xl border border-border bg-background p-6 sm:p-7 shadow-sm">
+      <div className="mb-6">
         <h2 className="text-lg font-semibold tracking-tight">{t('login')}</h2>
       </div>
 
@@ -89,7 +88,7 @@ function LoginForm() {
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             autoComplete="username"
-            className="h-10 bg-background/80"
+            className="h-10"
             required
           />
         </div>
@@ -114,10 +113,10 @@ function LoginForm() {
 
       <div className="relative my-5">
         <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border/70" />
+          <span className="w-full border-t border-border" />
         </div>
         <div className="relative flex justify-center text-xs">
-          <span className="bg-background/80 px-2 text-muted-foreground">{tc('or')}</span>
+          <span className="bg-background px-2 text-muted-foreground">{tc('or')}</span>
         </div>
       </div>
 

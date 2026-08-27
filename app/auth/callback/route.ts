@@ -96,6 +96,6 @@ export async function GET(req: NextRequest) {
   }
 
   const role = profile?.role ?? 'user'
-  const dest = role === 'admin' ? '/admin' : '/documents'
+  const dest = role === 'admin' ? '/admin' : '/home'
   return NextResponse.redirect(new URL(dest, origin))
 }

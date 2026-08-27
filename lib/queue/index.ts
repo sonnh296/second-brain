@@ -8,6 +8,9 @@ export interface IngestionJobData {
   file_type: string
   user_id: string
   manual_content?: string
+  /** When set, worker runs classroom ingestion instead of personal. */
+  classroom_id?: string
+  product?: 'personal' | 'classroom'
 }
 
 export interface DocumentCleanupJobData {

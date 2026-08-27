@@ -26,7 +26,7 @@ export default async function DashboardLayout({
     <div className="h-screen flex flex-col overflow-hidden bg-background">
       <header className="shrink-0 z-20 border-b bg-background px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3 sm:gap-6 min-w-0">
-          <Link href="/documents" className="flex items-center gap-2 shrink-0">
+          <Link href="/home" className="flex items-center gap-2 shrink-0">
             <Image
               src="/logo.png"
               alt="Note Everything"

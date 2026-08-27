@@ -871,6 +871,15 @@ export default function DocumentsPage() {
     setPreview(null);
   }
 
+  useEffect(() => {
+    if (!selectedDoc) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') closePreview()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedDoc])
+
   function handleDocDragStart(doc: Document, e: React.DragEvent) {
     const idsToDrag =
       selectedDocIds.length > 0 && selectedDocIds.includes(doc.id)
@@ -1910,11 +1919,7 @@ export default function DocumentsPage() {
             }
           }}
         >
-          <div
-            className={`flex-1 min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4 ${
-              selectedDoc ? "hidden sm:block" : ""
-            }`}
-          >
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto p-3 sm:p-4">
             {trashMode ? (
               <>
                 <div className="mb-3 flex items-center justify-between">
@@ -2194,52 +2199,64 @@ export default function DocumentsPage() {
             )}
           </div>
 
-          {/* Overlay so the file grid keeps its size (no column reflow). */}
+          {/* Document preview modal */}
           {selectedDoc && (
-            <div className="absolute inset-0 z-20 flex min-h-0 bg-background sm:inset-y-0 sm:left-auto sm:w-[min(100vw-2rem,28rem)] lg:w-lg sm:bg-background sm:shadow-[-12px_0_24px_-12px_rgba(0,0,0,0.12)]">
-              <DocumentPreviewPanel
-                doc={selectedDoc}
-                preview={preview}
-                previewLoading={previewLoading}
-                editName={editName}
-                editDescription={editDescription}
-                editContent={editContent}
-                savingName={savingName}
-                savingDescription={savingDescription}
-                savingContent={savingContent}
-                saveError={panelSaveError}
-                typeLabels={TYPE_LABELS_LOCAL}
-                fileIcon={<FileIcon type={selectedDoc.file_type} />}
-                formatBytes={formatBytes}
-                allTags={tags}
-                selectedTagIds={selectedTagIds}
-                savingTags={savingTags}
-                onClose={closePreview}
-                onEditName={setEditName}
-                onEditDescription={setEditDescription}
-                onEditContent={setEditContent}
-                onSaveName={saveName}
-                onSaveDescription={saveDescription}
-                onSaveContent={saveContent}
-                onTagIdsChange={setSelectedTagIds}
-                onSaveTags={saveTags}
-                onReprocessOcr={
-                  isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
-                }
-                reprocessingOcr={reprocessingOcr}
-                onKeepWeakOcr={
-                  isImageType(selectedDoc.file_type) ? keepWeakOcrImage : undefined
-                }
-                keepingWeakOcr={keepingWeakOcr}
-                onReupload={
-                  canReuploadDocument(selectedDoc)
-                    ? () => openReupload(selectedDoc)
-                    : undefined
-                }
-                reuploading={uploading && reuploadDoc?.id === selectedDoc.id}
-                onDelete={() => handleDelete(selectedDoc.id)}
-                deleting={deletingDocIds.includes(selectedDoc.id)}
-              />
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50"
+              onClick={closePreview}
+              role="presentation"
+            >
+              <div
+                className="w-full max-w-3xl lg:max-w-4xl h-[min(92vh,900px)] rounded-xl border bg-background shadow-xl overflow-hidden flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={selectedDoc.filename}
+              >
+                <DocumentPreviewPanel
+                  doc={selectedDoc}
+                  preview={preview}
+                  previewLoading={previewLoading}
+                  editName={editName}
+                  editDescription={editDescription}
+                  editContent={editContent}
+                  savingName={savingName}
+                  savingDescription={savingDescription}
+                  savingContent={savingContent}
+                  saveError={panelSaveError}
+                  typeLabels={TYPE_LABELS_LOCAL}
+                  fileIcon={<FileIcon type={selectedDoc.file_type} />}
+                  formatBytes={formatBytes}
+                  allTags={tags}
+                  selectedTagIds={selectedTagIds}
+                  savingTags={savingTags}
+                  onClose={closePreview}
+                  onEditName={setEditName}
+                  onEditDescription={setEditDescription}
+                  onEditContent={setEditContent}
+                  onSaveName={saveName}
+                  onSaveDescription={saveDescription}
+                  onSaveContent={saveContent}
+                  onTagIdsChange={setSelectedTagIds}
+                  onSaveTags={saveTags}
+                  onReprocessOcr={
+                    isImageType(selectedDoc.file_type) ? reprocessOcr : undefined
+                  }
+                  reprocessingOcr={reprocessingOcr}
+                  onKeepWeakOcr={
+                    isImageType(selectedDoc.file_type) ? keepWeakOcrImage : undefined
+                  }
+                  keepingWeakOcr={keepingWeakOcr}
+                  onReupload={
+                    canReuploadDocument(selectedDoc)
+                      ? () => openReupload(selectedDoc)
+                      : undefined
+                  }
+                  reuploading={uploading && reuploadDoc?.id === selectedDoc.id}
+                  onDelete={() => handleDelete(selectedDoc.id)}
+                  deleting={deletingDocIds.includes(selectedDoc.id)}
+                />
+              </div>
             </div>
           )}
         </div>

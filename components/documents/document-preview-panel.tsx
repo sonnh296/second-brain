@@ -62,8 +62,143 @@ interface DocumentPreviewPanelProps {
 
 function PreviewBody({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn('flex-1 min-h-[280px] overflow-hidden flex flex-col', className)}>
+    <div className={cn('flex-1 min-h-0 overflow-hidden flex flex-col', className)}>
       {children}
+    </div>
+  )
+}
+
+function PreviewLoadingState({
+  label = 'Đang tải...',
+  compact = false,
+}: {
+  label?: string
+  compact?: boolean
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center justify-center gap-3 text-muted-foreground',
+        compact ? 'p-6' : 'flex-1 min-h-[200px] p-8'
+      )}
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <div
+        className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin"
+        aria-hidden
+      />
+      <p className="text-sm">{label}</p>
+      {!compact && (
+        <div className="w-full max-w-xs space-y-2 mt-1">
+          <div className="h-3 w-full rounded bg-muted animate-pulse" />
+          <div className="h-3 w-4/5 rounded bg-muted animate-pulse mx-auto" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AssetPreviewFrame({
+  loading,
+  loadingLabel,
+  children,
+  className,
+}: {
+  loading: boolean
+  loadingLabel?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('relative flex-1 min-h-0 flex flex-col', className)}>
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/85">
+          <PreviewLoadingState label={loadingLabel ?? 'Đang tải nội dung...'} compact />
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+export function getContentEditState(
+  doc: Document,
+  preview: PreviewData | null,
+  editContent: string
+) {
+  const fileType = preview?.file_type ?? doc.file_type
+  const isMediaType = isTranscribableType(fileType)
+  const canEditText =
+    !isMediaType &&
+    (doc.file_type === 'note' ||
+      ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
+        Boolean(preview?.content)))
+  const originalContent = preview?.content ?? ''
+  const hasContentChanges = editContent.trim() !== originalContent.trim()
+  return { canEditText, hasContentChanges }
+}
+
+export function ContentPreviewFooter({
+  doc,
+  preview,
+  editContent,
+  savingContent,
+  onSaveContent,
+  viewerUrl,
+  canInline,
+  canOpenDownload,
+}: {
+  doc: Document
+  preview: PreviewData | null
+  editContent: string
+  savingContent: boolean
+  onSaveContent: () => void | Promise<void>
+  viewerUrl: string
+  canInline: boolean
+  canOpenDownload: boolean
+}) {
+  const { canEditText, hasContentChanges } = getContentEditState(doc, preview, editContent)
+  const showDownload = doc.file_type !== 'note' && canOpenDownload
+
+  if (!canEditText && !showDownload) return null
+
+  return (
+    <div className="shrink-0 flex gap-2 p-3 border-t bg-background">
+      {canEditText && (
+        <Button
+          size="default"
+          onClick={() => void onSaveContent()}
+          disabled={savingContent || !hasContentChanges}
+          className="gap-2 shrink-0"
+        >
+          {savingContent ? 'Đang lưu...' : 'Lưu'}
+        </Button>
+      )}
+      {showDownload && canInline && (
+        <a
+          href={viewerUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(buttonVariants({ variant: 'outline', size: 'default' }), 'flex-1 gap-2')}
+        >
+          <ExternalLink className="h-4 w-4" />
+          Mở tab mới
+        </a>
+      )}
+      {showDownload && (
+        <a
+          href={`${viewerUrl}?download=1`}
+          className={cn(
+            buttonVariants({ variant: 'default', size: 'default' }),
+            canInline ? 'flex-1' : 'flex-1',
+            'gap-2'
+          )}
+        >
+          <Download className="h-4 w-4" />
+          Tải về
+        </a>
+      )}
     </div>
   )
 }
@@ -73,10 +208,8 @@ export function ContentPreview({
   preview,
   previewLoading,
   editContent,
-  savingContent,
   isActive,
   onEditContent,
-  onSaveContent,
   pdfStartPage,
   layout = 'panel',
 }: {
@@ -84,14 +217,13 @@ export function ContentPreview({
   preview: PreviewData | null
   previewLoading: boolean
   editContent: string
-  savingContent: boolean
   isActive: boolean
   onEditContent: (v: string) => void
-  onSaveContent: () => void | Promise<void>
   pdfStartPage?: number
   layout?: 'panel' | 'page'
 }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null)
+  const [assetLoading, setAssetLoading] = useState(true)
 
   useEffect(() => {
     if (!isActive) mediaRef.current?.pause()
@@ -109,13 +241,15 @@ export function ContentPreview({
     (doc.file_type === 'note' ||
       ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
         Boolean(preview?.content)))
-  const originalContent = preview?.content ?? ''
-  const hasContentChanges = editContent.trim() !== originalContent.trim()
+
+  useEffect(() => {
+    setAssetLoading(true)
+  }, [doc.id, viewerUrl])
 
   if (previewLoading) {
     return (
       <PreviewBody>
-        <p className="text-sm text-muted-foreground p-4">Đang tải...</p>
+        <PreviewLoadingState label="Đang mở tài liệu..." />
       </PreviewBody>
     )
   }
@@ -139,14 +273,18 @@ export function ContentPreview({
   if (fileType === 'pdf') {
     return (
       <PreviewBody className={layout === 'page' ? 'min-h-[50vh]' : undefined}>
-        <iframe
-          src={viewerUrl}
-          title={preview?.filename ?? doc.filename}
-          className={cn(
-            'flex-1 w-full border-0 bg-background',
-            layout === 'page' ? 'min-h-[50vh]' : 'min-h-[300px]'
-          )}
-        />
+        <AssetPreviewFrame loading={assetLoading} loadingLabel="Đang tải PDF...">
+          <iframe
+            src={viewerUrl}
+            title={preview?.filename ?? doc.filename}
+            onLoad={() => setAssetLoading(false)}
+            className={cn(
+              'flex-1 w-full border-0 bg-background',
+              layout === 'page' ? 'min-h-[50vh]' : 'min-h-[300px]',
+              assetLoading && 'opacity-0'
+            )}
+          />
+        </AssetPreviewFrame>
       </PreviewBody>
     )
   }
@@ -155,33 +293,35 @@ export function ContentPreview({
     return (
       <PreviewBody className={layout === 'page' ? 'min-h-[40vh]' : undefined}>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={preview?.image_url ?? viewerUrl}
-            alt={preview?.filename ?? doc.filename}
+          <AssetPreviewFrame
+            loading={assetLoading}
+            loadingLabel="Đang tải ảnh..."
             className={cn(
-              'w-full rounded border object-contain bg-background mx-auto',
-              layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,420px)]'
+              'min-h-[200px] rounded border bg-muted/20',
+              layout === 'page' ? 'min-h-[min(40vh,320px)]' : 'min-h-[min(35vh,280px)]'
             )}
-          />
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview?.image_url ?? viewerUrl}
+              alt={preview?.filename ?? doc.filename}
+              onLoad={() => setAssetLoading(false)}
+              onError={() => setAssetLoading(false)}
+              className={cn(
+                'w-full rounded border object-contain bg-background mx-auto transition-opacity duration-200',
+                layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,420px)]',
+                assetLoading && 'opacity-0'
+              )}
+            />
+          </AssetPreviewFrame>
           {preview?.content &&
             (canEditText ? (
-              <div className="space-y-2">
-                <Textarea
-                  value={editContent}
-                  onChange={(e) => onEditContent(e.target.value)}
-                  rows={10}
-                  className="min-h-56 resize-y text-sm leading-relaxed"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void onSaveContent()}
-                  disabled={savingContent || !hasContentChanges}
-                >
-                  {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
-                </Button>
-              </div>
+              <Textarea
+                value={editContent}
+                onChange={(e) => onEditContent(e.target.value)}
+                rows={10}
+                className="min-h-56 resize-y text-sm leading-relaxed"
+              />
             ) : (
               <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
                 {preview.content}
@@ -198,18 +338,23 @@ export function ContentPreview({
   if (fileType === 'mp4' || fileType === 'mov') {
     return (
       <PreviewBody className={layout === 'page' ? 'min-h-[50vh]' : undefined}>
-        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-          <video
-            ref={mediaRef as React.RefObject<HTMLVideoElement>}
-            src={viewerUrl}
-            controls
-            preload="metadata"
-            className={cn(
-              'w-full rounded border bg-black',
-              layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-full'
-            )}
-          />
-        </div>
+        <AssetPreviewFrame loading={assetLoading} loadingLabel="Đang tải video...">
+          <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+            <video
+              ref={mediaRef as React.RefObject<HTMLVideoElement>}
+              src={viewerUrl}
+              controls
+              preload="metadata"
+              onLoadedData={() => setAssetLoading(false)}
+              onError={() => setAssetLoading(false)}
+              className={cn(
+                'w-full rounded border bg-black transition-opacity duration-200',
+                layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-full',
+                assetLoading && 'opacity-0'
+              )}
+            />
+          </div>
+        </AssetPreviewFrame>
       </PreviewBody>
     )
   }
@@ -217,15 +362,19 @@ export function ContentPreview({
   if (fileType === 'mp3' || fileType === 'wav') {
     return (
       <PreviewBody>
-        <div className="p-6 flex items-center justify-center">
-          <audio
-            ref={mediaRef as React.RefObject<HTMLAudioElement>}
-            src={viewerUrl}
-            controls
-            preload="metadata"
-            className="w-full"
-          />
-        </div>
+        <AssetPreviewFrame loading={assetLoading} loadingLabel="Đang tải audio...">
+          <div className="p-6 flex items-center justify-center">
+            <audio
+              ref={mediaRef as React.RefObject<HTMLAudioElement>}
+              src={viewerUrl}
+              controls
+              preload="metadata"
+              onLoadedData={() => setAssetLoading(false)}
+              onError={() => setAssetLoading(false)}
+              className={cn('w-full transition-opacity duration-200', assetLoading && 'opacity-0')}
+            />
+          </div>
+        </AssetPreviewFrame>
       </PreviewBody>
     )
   }
@@ -235,22 +384,12 @@ export function ContentPreview({
       <PreviewBody>
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {canEditText ? (
-            <div className="space-y-2">
-              <Textarea
-                value={editContent}
-                onChange={(e) => onEditContent(e.target.value)}
-                rows={18}
-                className="min-h-[min(55vh,420px)] resize-y text-sm leading-relaxed"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void onSaveContent()}
-                disabled={savingContent || !hasContentChanges}
-              >
-                {savingContent ? 'Đang lưu nội dung...' : 'Lưu nội dung đã chỉnh sửa'}
-              </Button>
-            </div>
+            <Textarea
+              value={editContent}
+              onChange={(e) => onEditContent(e.target.value)}
+              rows={18}
+              className="min-h-[min(55vh,420px)] resize-y text-sm leading-relaxed"
+            />
           ) : (
             <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
               {preview?.content ?? ''}
@@ -282,7 +421,7 @@ export function SubtitlesPanel({
   if (previewLoading) {
     return (
       <PreviewBody>
-        <p className="text-sm text-muted-foreground p-4">Đang tải...</p>
+        <PreviewLoadingState label="Đang tải phụ đề..." />
       </PreviewBody>
     )
   }
@@ -468,7 +607,7 @@ export function DocumentPreviewPanel({
   )
 
   return (
-    <div className="w-full shrink-0 flex flex-col h-full min-h-0 bg-muted/10 border-l sm:border-l border-0">
+    <div className="w-full flex flex-col h-full min-h-0 bg-background">
       <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {editingName ? (
@@ -610,40 +749,19 @@ export function DocumentPreviewPanel({
             preview={preview}
             previewLoading={previewLoading}
             editContent={editContent}
-            savingContent={savingContent}
             isActive={tab === 'content'}
             onEditContent={onEditContent}
-            onSaveContent={onSaveContent}
           />
-          {doc.file_type !== 'note' && canOpenDownload && (
-            <div className="shrink-0 flex gap-2 p-3 border-t bg-muted/50 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-              {canInline && (
-                <a
-                  href={viewerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(
-                    buttonVariants({ variant: 'outline', size: 'default' }),
-                    'flex-1 gap-2 shadow-sm'
-                  )}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Mở tab mới
-                </a>
-              )}
-              <a
-                href={`${viewerUrl}?download=1`}
-                className={cn(
-                  buttonVariants({ variant: 'default', size: 'default' }),
-                  canInline ? 'flex-1' : 'w-full',
-                  'gap-2 shadow-sm'
-                )}
-              >
-                <Download className="h-4 w-4" />
-                Tải về
-              </a>
-            </div>
-          )}
+          <ContentPreviewFooter
+            doc={doc}
+            preview={preview}
+            editContent={editContent}
+            savingContent={savingContent}
+            onSaveContent={onSaveContent}
+            viewerUrl={viewerUrl}
+            canInline={canInline}
+            canOpenDownload={canOpenDownload}
+          />
         </div>
 
         {isMedia && (

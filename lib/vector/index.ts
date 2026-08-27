@@ -23,6 +23,9 @@ export interface ChunkPayload {
   chunk_text: string
   /** PDF page number the chunk starts on (page-accurate citations). */
   page?: number
+  /** Classroom product isolation — required for class RAG filters. */
+  classroom_id?: string
+  product?: 'personal' | 'classroom'
   [key: string]: unknown
 }
 
@@ -49,7 +52,7 @@ export async function ensureCollection(): Promise<void> {
   }
 
   // Payload indexes — idempotent (Qdrant ignores if already exists)
-  for (const field of ['user_id', 'document_id'] as const) {
+  for (const field of ['user_id', 'document_id', 'classroom_id', 'product'] as const) {
     try {
       await client.createPayloadIndex(getCollectionName(), {
         field_name: field,
@@ -125,6 +128,55 @@ export async function searchChunks(
     score: r.score,
     payload: r.payload as unknown as ChunkPayload,
   }))
+}
+
+/** Classroom RAG — filter by classroom_id only (shared corpus for all members). */
+export async function searchClassroomChunks(
+  classroomId: string,
+  vector: number[],
+  topK: number,
+  options: { documentIds?: string[] } = {}
+): Promise<SearchResult[]> {
+  const documentIds = options.documentIds
+  if (documentIds && documentIds.length === 0) return []
+
+  const must: { key: string; match: { value: string } | { any: string[] } }[] = [
+    { key: 'classroom_id', match: { value: classroomId } },
+    { key: 'product', match: { value: 'classroom' } },
+  ]
+  if (documentIds && documentIds.length > 0) {
+    must.push({ key: 'document_id', match: { any: documentIds } })
+  }
+
+  const client = getQdrantClient()
+  const results = await client.search(getCollectionName(), {
+    vector,
+    limit: topK,
+    filter: { must },
+    with_payload: true,
+  })
+
+  return results.map((r) => ({
+    point_id: String(r.id),
+    score: r.score,
+    payload: r.payload as unknown as ChunkPayload,
+  }))
+}
+
+export async function deleteByClassroomDocument(
+  classroomId: string,
+  documentId: string
+): Promise<void> {
+  const client = getQdrantClient()
+  await client.delete(getCollectionName(), {
+    wait: true,
+    filter: {
+      must: [
+        { key: 'classroom_id', match: { value: classroomId } },
+        { key: 'document_id', match: { value: documentId } },
+      ],
+    },
+  })
 }
 
 export async function deleteByDocument(

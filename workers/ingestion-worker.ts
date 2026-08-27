@@ -7,6 +7,7 @@ config({ path: resolve(process.cwd(), '.env.local'), override: true })
 import { Worker } from 'bullmq'
 import IORedis from 'ioredis'
 import { runIngestionPipeline } from '../lib/ingestion/pipeline'
+import { runClassroomIngestionPipeline } from '../lib/classroom/ingestion'
 import { runDocumentCleanup } from '../lib/cleanup/document-cleanup'
 import { purgeExpiredTrash } from '../lib/cleanup/purge-trash'
 import { createServiceSupabaseClient } from '../lib/db/server'
@@ -31,16 +32,37 @@ const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY ?? 2)
 const ingestionWorker = new Worker<IngestionJobData>(
   'ingestion',
   async (job) => {
-    const { document_id, r2_key, file_type, user_id, manual_content } = job.data
+    const { document_id, r2_key, file_type, user_id, manual_content, classroom_id, product } =
+      job.data
     logger.info('Processing ingestion job', {
       jobId: job.id,
       documentId: document_id,
       userId: user_id,
+      product: product ?? 'personal',
+      classroomId: classroom_id,
     })
 
     const filename = r2_key.split('/').pop() ?? 'unknown'
 
-    await runIngestionPipeline(document_id, r2_key, file_type, user_id, filename, manual_content)
+    if (product === 'classroom' && classroom_id) {
+      await runClassroomIngestionPipeline(
+        document_id,
+        r2_key,
+        file_type,
+        user_id,
+        classroom_id,
+        filename
+      )
+    } else {
+      await runIngestionPipeline(
+        document_id,
+        r2_key,
+        file_type,
+        user_id,
+        filename,
+        manual_content
+      )
+    }
     logger.info('Ingestion job completed', {
       jobId: job.id,
       documentId: document_id,

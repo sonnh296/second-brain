@@ -33,11 +33,15 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const isProtectedPage =
+    pathname.startsWith('/home') ||
+    pathname.startsWith('/hub') ||
+    pathname.startsWith('/classroom') ||
     pathname.startsWith('/chat') ||
     pathname.startsWith('/documents') ||
     pathname.startsWith('/profile') ||
     pathname.startsWith('/admin')
   const isProtectedApi =
+    pathname.startsWith('/api/classroom') ||
     pathname.startsWith('/api/sessions') ||
     pathname.startsWith('/api/chat') ||
     pathname.startsWith('/api/documents') ||
@@ -93,10 +97,17 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Exclude /api/upload — proxy buffers/truncates multipart body causing upload failures
   matcher: [
+    '/home',
+    '/home/:path*',
+    '/hub',
+    '/hub/:path*',
+    '/classroom',
+    '/classroom/:path*',
     '/chat/:path*',
     '/documents/:path*',
     '/profile/:path*',
     '/admin/:path*',
+    '/api/classroom/:path*',
     '/api/sessions/:path*',
     '/api/chat',
     '/api/documents/:path*',

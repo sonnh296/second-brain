@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, Download, ExternalLink } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import {
   ContentPreview,
+  ContentPreviewFooter,
   DescriptionPanel,
   SubtitlesPanel,
   type DocumentPanelTab,
@@ -262,42 +263,21 @@ export function DocumentViewerPage({ documentId }: { documentId: string }) {
             preview={preview}
             previewLoading={previewLoading}
             editContent={editContent}
-            savingContent={savingContent}
             isActive
             onEditContent={setEditContent}
-            onSaveContent={saveContent}
             pdfStartPage={pdfStartPage}
             layout="page"
           />
-          {doc.file_type !== 'note' && canOpenDownload && (
-            <div className="shrink-0 flex gap-2 p-3 border-t bg-muted/40">
-              {canInline && (
-                <a
-                  href={viewerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={cn(
-                    buttonVariants({ variant: 'outline', size: 'default' }),
-                    'flex-1 gap-2'
-                  )}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Mở file gốc
-                </a>
-              )}
-              <a
-                href={`${viewerUrl}?download=1`}
-                className={cn(
-                  buttonVariants({ variant: 'default', size: 'default' }),
-                  canInline ? 'flex-1' : 'w-full',
-                  'gap-2'
-                )}
-              >
-                <Download className="h-4 w-4" />
-                Tải về
-              </a>
-            </div>
-          )}
+          <ContentPreviewFooter
+            doc={doc}
+            preview={preview}
+            editContent={editContent}
+            savingContent={savingContent}
+            onSaveContent={saveContent}
+            viewerUrl={viewerUrl}
+            canInline={canInline}
+            canOpenDownload={Boolean(canOpenDownload)}
+          />
         </div>
 
         <aside className="w-full lg:w-[min(100vw,24rem)] xl:w-96 shrink-0 flex flex-col min-h-0 max-h-[45vh] lg:max-h-none bg-muted/10">

@@ -51,6 +51,18 @@ Then apply the 2.3 migration (document replacement uploads):
 
 `supabase/migrations/004_document_replacement.sql`
 
+Then apply Classroom (hub + class product):
+
+`supabase/migrations/006_classroom.sql`
+
+Then apply Classroom create RPC fix:
+
+`supabase/migrations/007_classroom_create_rpc.sql`
+
+Then apply Classroom security hardening:
+
+`supabase/migrations/009_classroom_security.sql`
+
 Create the first admin user (set `ADMIN_PASSWORD` in `.env.local` first):
 
 ```bash
