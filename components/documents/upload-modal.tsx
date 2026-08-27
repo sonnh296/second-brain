@@ -206,7 +206,12 @@ export function UploadModal({
             </Button>
             <Button
               type="button"
-              className="flex-1"
+              className={cn(
+                'flex-1',
+                !selectedFile &&
+                  'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+              )}
+              variant={selectedFile ? 'default' : 'secondary'}
               disabled={uploading || !selectedFile}
               onClick={() => void onSubmit()}
             >

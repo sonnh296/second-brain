@@ -7,6 +7,8 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { RichTextEditor } from '@/components/ui/rich-text-editor'
+import { MarkdownContent } from '@/components/markdown-content'
 import { StatusBadge } from '@/components/documents/document-grid'
 import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import type { PreviewData } from '@/components/documents/types'
@@ -147,19 +149,45 @@ function ZoomableImage({
 }) {
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [fullscreen, setFullscreen] = useState(false)
+  const [fsScale, setFsScale] = useState(1)
+  const [fsOffset, setFsOffset] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{
     active: boolean
+    moved: boolean
     startX: number
     startY: number
     originX: number
     originY: number
-  }>({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+  }>({ active: false, moved: false, startX: 0, startY: 0, originX: 0, originY: 0 })
   const viewportRef = useRef<HTMLDivElement>(null)
+  const fsViewportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setScale(1)
     setOffset({ x: 0, y: 0 })
+    setFullscreen(false)
+    setFsScale(1)
+    setFsOffset({ x: 0, y: 0 })
   }, [src])
+
+  useEffect(() => {
+    if (!fullscreen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setFullscreen(false)
+        setFsScale(1)
+        setFsOffset({ x: 0, y: 0 })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [fullscreen])
 
   useEffect(() => {
     const el = viewportRef.current
@@ -188,6 +216,23 @@ function ZoomableImage({
     return () => el.removeEventListener('wheel', onNativeWheel)
   }, [])
 
+  useEffect(() => {
+    if (!fullscreen) return
+    const el = fsViewportRef.current
+    if (!el) return
+    function onNativeWheel(e: WheelEvent) {
+      e.preventDefault()
+      const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
+      setFsScale((prev) => {
+        const next = clampZoomScale(prev + delta)
+        if (next <= 1) setFsOffset({ x: 0, y: 0 })
+        return next
+      })
+    }
+    el.addEventListener('wheel', onNativeWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onNativeWheel)
+  }, [fullscreen])
+
   function zoomBy(delta: number) {
     setScale((prev) => {
       const next = clampZoomScale(prev + delta)
@@ -201,27 +246,76 @@ function ZoomableImage({
     setOffset({ x: 0, y: 0 })
   }
 
+  function openFullscreen() {
+    setFullscreen(true)
+    setFsScale(1)
+    setFsOffset({ x: 0, y: 0 })
+  }
+
+  function closeFullscreen() {
+    setFullscreen(false)
+    setFsScale(1)
+    setFsOffset({ x: 0, y: 0 })
+  }
+
   function onPointerDown(e: React.PointerEvent) {
-    if (scale <= 1) return
     e.currentTarget.setPointerCapture(e.pointerId)
     dragRef.current = {
       active: true,
+      moved: false,
       startX: e.clientX,
       startY: e.clientY,
-      originX: offset.x,
-      originY: offset.y,
+      originX: scale > 1 ? offset.x : 0,
+      originY: scale > 1 ? offset.y : 0,
     }
   }
 
   function onPointerMove(e: React.PointerEvent) {
     if (!dragRef.current.active) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragRef.current.moved = true
+    if (scale <= 1) return
     setOffset({
+      x: dragRef.current.originX + dx,
+      y: dragRef.current.originY + dy,
+    })
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const wasDrag = dragRef.current.moved
+    dragRef.current.active = false
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    if (!wasDrag) openFullscreen()
+  }
+
+  function onFsPointerDown(e: React.PointerEvent) {
+    if (fsScale <= 1) return
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = {
+      active: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: fsOffset.x,
+      originY: fsOffset.y,
+    }
+  }
+
+  function onFsPointerMove(e: React.PointerEvent) {
+    if (!dragRef.current.active || fsScale <= 1) return
+    setFsOffset({
       x: dragRef.current.originX + (e.clientX - dragRef.current.startX),
       y: dragRef.current.originY + (e.clientY - dragRef.current.startY),
     })
   }
 
-  function onPointerUp(e: React.PointerEvent) {
+  function onFsPointerUp(e: React.PointerEvent) {
     dragRef.current.active = false
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
@@ -230,27 +324,19 @@ function ZoomableImage({
     }
   }
 
-  function onDoubleClick() {
-    if (scale > 1) {
-      resetZoom()
-      return
-    }
-    setScale(2)
-  }
-
   return (
     <div className="relative flex flex-col min-h-0 flex-1 gap-2">
       <div
         ref={viewportRef}
         className={cn(
-          'relative flex-1 min-h-[200px] overflow-hidden rounded border bg-muted/20 touch-none select-none',
-          scale > 1 ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in'
+          'relative flex-1 min-h-[200px] overflow-hidden rounded border bg-muted/20 touch-none select-none cursor-zoom-in',
+          scale > 1 && 'cursor-grab active:cursor-grabbing'
         )}
+        title="Nhấn để phóng toàn màn hình"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDoubleClick={onDoubleClick}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -314,7 +400,98 @@ function ZoomableImage({
           <RotateCcw className="h-3.5 w-3.5 mr-1" />
           100%
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 px-2 text-xs"
+          onClick={openFullscreen}
+          title="Toàn màn hình"
+        >
+          <ZoomIn className="h-3.5 w-3.5 mr-1" />
+          Toàn màn hình
+        </Button>
       </div>
+
+      {fullscreen && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/90 flex flex-col"
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt}
+        >
+          <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-3 text-white">
+            <p className="text-sm truncate min-w-0 flex-1">{alt}</p>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-white hover:bg-white/15 hover:text-white"
+                onClick={() =>
+                  setFsScale((s) => {
+                    const next = clampZoomScale(s - ZOOM_STEP)
+                    if (next <= 1) setFsOffset({ x: 0, y: 0 })
+                    return next
+                  })
+                }
+                aria-label="Thu nhỏ"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <span className="min-w-12 text-center text-xs tabular-nums text-white/80">
+                {Math.round(fsScale * 100)}%
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-white hover:bg-white/15 hover:text-white"
+                onClick={() => setFsScale((s) => clampZoomScale(s + ZOOM_STEP))}
+                aria-label="Phóng to"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0 text-white hover:bg-white/15 hover:text-white"
+                onClick={closeFullscreen}
+                aria-label="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div
+            ref={fsViewportRef}
+            className={cn(
+              'flex-1 min-h-0 relative overflow-hidden touch-none select-none cursor-zoom-in',
+              fsScale > 1 && 'cursor-grab active:cursor-grabbing'
+            )}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeFullscreen()
+            }}
+            onPointerDown={onFsPointerDown}
+            onPointerMove={onFsPointerMove}
+            onPointerUp={onFsPointerUp}
+            onPointerCancel={onFsPointerUp}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={alt}
+              draggable={false}
+              className="absolute left-1/2 top-1/2 max-h-[92%] max-w-[96%] object-contain will-change-transform"
+              style={{
+                transform: `translate(calc(-50% + ${fsOffset.x}px), calc(-50% + ${fsOffset.y}px)) scale(${fsScale})`,
+                transformOrigin: 'center center',
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -365,9 +542,14 @@ export function ContentPreviewFooter({
       {canEditText && (
         <Button
           size="default"
+          variant={hasContentChanges ? 'default' : 'secondary'}
           onClick={() => void onSaveContent()}
           disabled={savingContent || !hasContentChanges}
-          className="flex-1 gap-2"
+          className={cn(
+            'flex-1 gap-2',
+            !hasContentChanges &&
+              'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+          )}
         >
           {savingContent ? 'Đang lưu...' : 'Lưu'}
         </Button>
@@ -485,13 +667,13 @@ export function ContentPreview({
   if (isImageType(fileType)) {
     return (
       <PreviewBody className={layout === 'page' ? 'min-h-[40vh]' : undefined}>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden p-4 flex flex-col gap-3">
           <AssetPreviewFrame
             loading={assetLoading}
             loadingLabel="Đang tải ảnh..."
             className={cn(
-              'min-h-[240px]',
-              layout === 'page' ? 'min-h-[min(50vh,420px)]' : 'min-h-[min(40vh,320px)]'
+              'shrink-0',
+              layout === 'page' ? 'min-h-[min(35vh,280px)]' : 'min-h-[min(28vh,220px)]'
             )}
           >
             <ZoomableImage
@@ -501,25 +683,26 @@ export function ContentPreview({
               onLoad={() => setAssetLoading(false)}
               onError={() => setAssetLoading(false)}
               maxHeightClass={
-                layout === 'page' ? 'max-h-[min(70vh,720px)]' : 'max-h-[min(50vh,480px)]'
+                layout === 'page' ? 'max-h-[min(40vh,360px)]' : 'max-h-[min(32vh,280px)]'
               }
             />
           </AssetPreviewFrame>
           {preview?.content &&
             (canEditText ? (
-              <Textarea
+              <RichTextEditor
                 value={editContent}
-                onChange={(e) => onEditContent(e.target.value)}
-                rows={10}
-                className="min-h-56 resize-y text-sm leading-relaxed"
+                onChange={onEditContent}
+                minHeightClass="min-h-0"
+                className="flex-1"
+                placeholder="Chỉnh sửa nội dung..."
               />
             ) : (
-              <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-                {preview.content}
-              </pre>
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded border bg-background p-3">
+                <MarkdownContent content={preview.content} />
+              </div>
             ))}
           {preview?.message && (
-            <p className="text-xs text-muted-foreground">{preview.message}</p>
+            <p className="shrink-0 text-xs text-muted-foreground">{preview.message}</p>
           )}
         </div>
       </PreviewBody>
@@ -573,18 +756,19 @@ export function ContentPreview({
   if (preview?.content || doc.file_type === 'note') {
     return (
       <PreviewBody>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 overflow-hidden p-4 flex flex-col">
           {canEditText ? (
-            <Textarea
+            <RichTextEditor
               value={editContent}
-              onChange={(e) => onEditContent(e.target.value)}
-              rows={18}
-              className="min-h-[min(55vh,420px)] resize-y text-sm leading-relaxed"
+              onChange={onEditContent}
+              minHeightClass="min-h-0"
+              className="flex-1"
+              placeholder="Viết nội dung..."
             />
           ) : (
-            <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed rounded border bg-background p-3">
-              {preview?.content ?? ''}
-            </pre>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded border bg-background p-3">
+              <MarkdownContent content={preview?.content ?? ''} />
+            </div>
           )}
         </div>
       </PreviewBody>
@@ -659,34 +843,43 @@ export function SubtitlesPanel({
 
 export function DescriptionPanel({
   editDescription,
+  originalDescription,
   savingDescription,
   onEditDescription,
   onSaveDescription,
   allTags,
   selectedTagIds,
+  originalTagIds,
   savingTags,
   onTagIdsChange,
   onSaveTags,
 }: {
   editDescription: string
+  originalDescription: string
   savingDescription: boolean
   onEditDescription: (v: string) => void
   onSaveDescription: () => void | Promise<void | boolean>
   allTags: Tag[]
   selectedTagIds: string[]
+  originalTagIds: string[]
   savingTags: boolean
   onTagIdsChange: (ids: string[]) => void
   onSaveTags: () => void | Promise<void | boolean>
 }) {
+  const descriptionDirty =
+    (editDescription.trim() || '') !== (originalDescription.trim() || '')
+  const tagsDirty =
+    [...selectedTagIds].sort().join(',') !== [...originalTagIds].sort().join(',')
+
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4">
         <DocumentTagEditor
           allTags={allTags}
           selectedTagIds={selectedTagIds}
           saving={savingTags}
           onChange={onTagIdsChange}
-          onSave={onSaveTags}
+          hideSaveButton
         />
 
         <div>
@@ -695,21 +888,40 @@ export function DescriptionPanel({
             value={editDescription}
             onChange={(e) => onEditDescription(e.target.value)}
             placeholder="Ghi chú, tóm tắt hoặc mô tả chi tiết để dễ tìm lại sau..."
-            rows={14}
+            rows={12}
             maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
-            className="mt-1.5 min-h-[min(50vh,320px)] resize-y text-sm leading-relaxed"
+            className="mt-1.5 min-h-[180px] max-h-[min(45vh,360px)] resize-y text-sm leading-relaxed overflow-y-auto"
           />
           <p className="text-[11px] text-muted-foreground mt-1.5">
             {editDescription.length.toLocaleString('vi-VN')} /{' '}
             {MAX_DOCUMENT_DESCRIPTION_LENGTH.toLocaleString('vi-VN')} ký tự
           </p>
         </div>
+      </div>
+      <div className="shrink-0 border-t bg-background p-3 space-y-2">
         <Button
-          size="sm"
-          variant="outline"
-          className="w-full"
-          onClick={onSaveDescription}
-          disabled={savingDescription}
+          size="default"
+          variant={tagsDirty ? 'default' : 'secondary'}
+          className={cn(
+            'w-full',
+            !tagsDirty &&
+              'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+          )}
+          onClick={() => void onSaveTags()}
+          disabled={savingTags || !tagsDirty}
+        >
+          {savingTags ? 'Đang lưu...' : 'Lưu tag'}
+        </Button>
+        <Button
+          size="default"
+          variant={descriptionDirty ? 'default' : 'secondary'}
+          className={cn(
+            'w-full',
+            !descriptionDirty &&
+              'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+          )}
+          onClick={() => void onSaveDescription()}
+          disabled={savingDescription || !descriptionDirty}
         >
           {savingDescription ? 'Đang lưu...' : 'Lưu mô tả'}
         </Button>
@@ -817,9 +1029,14 @@ export function DocumentPreviewPanel({
               <Button
                 type="button"
                 size="sm"
-                className="h-8 shrink-0 px-2.5"
+                variant={editName.trim() && editName.trim() !== doc.filename ? 'default' : 'secondary'}
+                className={cn(
+                  'h-8 shrink-0 px-2.5',
+                  (!editName.trim() || editName.trim() === doc.filename) &&
+                    'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+                )}
                 onClick={() => void commitNameEdit()}
-                disabled={savingName || !editName.trim()}
+                disabled={savingName || !editName.trim() || editName.trim() === doc.filename}
               >
                 {savingName ? '...' : 'Lưu'}
               </Button>
@@ -969,11 +1186,13 @@ export function DocumentPreviewPanel({
         <div className={cn('flex-1 min-h-0 flex flex-col overflow-hidden', tab !== 'description' && 'hidden')}>
           <DescriptionPanel
             editDescription={editDescription}
+            originalDescription={doc.description ?? ''}
             savingDescription={savingDescription}
             onEditDescription={onEditDescription}
             onSaveDescription={onSaveDescription}
             allTags={allTags}
             selectedTagIds={selectedTagIds}
+            originalTagIds={doc.tags?.map((t) => t.id) ?? []}
             savingTags={savingTags}
             onTagIdsChange={onTagIdsChange}
             onSaveTags={onSaveTags}

@@ -311,11 +311,13 @@ export function DocumentViewerPage({ documentId }: { documentId: string }) {
             >
               <DescriptionPanel
                 editDescription={editDescription}
+                originalDescription={doc.description ?? ''}
                 savingDescription={savingDescription}
                 onEditDescription={setEditDescription}
                 onSaveDescription={saveDescription}
                 allTags={allTags}
                 selectedTagIds={selectedTagIds}
+                originalTagIds={doc.tags?.map((t) => t.id) ?? []}
                 savingTags={savingTags}
                 onTagIdsChange={setSelectedTagIds}
                 onSaveTags={saveTags}

@@ -191,6 +191,8 @@ export default function DocumentsPage() {
   const [noteModal, setNoteModal] = useState<NoteModalState | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
+  const [noteInitialTitle, setNoteInitialTitle] = useState("");
+  const [noteInitialContent, setNoteInitialContent] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const [panelSaveError, setPanelSaveError] = useState("");
@@ -807,16 +809,24 @@ export default function DocumentsPage() {
     setNoteModal({ mode: "create" });
     setNoteTitle("");
     setNoteContent("");
+    setNoteInitialTitle("");
+    setNoteInitialContent("");
     setNoteError("");
   }
 
   function openEditNoteModal(doc: Document) {
     setNoteModal({ mode: "edit", doc });
     setNoteTitle(doc.filename);
+    setNoteInitialTitle(doc.filename);
     setNoteContent("");
+    setNoteInitialContent("");
     setNoteError("");
     fetch(`/api/documents/${doc.id}/preview`).then(async (res) => {
-      if (res.ok) setNoteContent((await res.json()).content ?? "");
+      if (res.ok) {
+        const content = (await res.json()).content ?? "";
+        setNoteContent(content);
+        setNoteInitialContent(content);
+      }
     });
   }
 
@@ -824,6 +834,8 @@ export default function DocumentsPage() {
     setNoteModal(null);
     setNoteTitle("");
     setNoteContent("");
+    setNoteInitialTitle("");
+    setNoteInitialContent("");
     setNoteError("");
   }
 
@@ -2273,6 +2285,8 @@ export default function DocumentsPage() {
           doc={noteModal.doc}
           title={noteTitle}
           content={noteContent}
+          initialTitle={noteInitialTitle}
+          initialContent={noteInitialContent}
           saving={savingNote}
           error={noteError}
           onTitleChange={setNoteTitle}
