@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { RichTextEditor } from '@/components/ui/rich-text-editor'
+import { RichTextEditor, type NoteImageScope } from '@/components/ui/rich-text-editor'
 import { cn } from '@/lib/utils'
 import type { Document } from '@/lib/db/types'
 
@@ -17,6 +17,7 @@ interface NoteModalProps {
   initialContent?: string
   saving: boolean
   error: string
+  imageScope: NoteImageScope
   onTitleChange: (v: string) => void
   onContentChange: (v: string) => void
   onSave: () => void
@@ -31,6 +32,7 @@ export function NoteModal({
   initialContent = '',
   saving,
   error,
+  imageScope,
   onTitleChange,
   onContentChange,
   onSave,
@@ -77,6 +79,7 @@ export function NoteModal({
               className="flex-1"
               placeholder="Viết ghi chú..."
               disabled={saving}
+              imageScope={imageScope}
             />
           </div>
           {error && <p className="shrink-0 text-sm text-destructive">{error}</p>}

@@ -5,13 +5,38 @@ import { enqueueIngestionJob } from '@/lib/queue'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { checkDocumentQuota, quotaStatusCode } from '@/lib/upload-limits'
 import { cleanupFailedUpload } from '@/lib/upload/cleanup-document'
+import { copyObject, listObjectKeys, deleteObject } from '@/lib/storage'
+import { noteImageR2Key, noteImagesPrefix } from '@/lib/notes/images'
 import { logger } from '@/lib/logger'
 
 const CreateNoteSchema = z.object({
   title: z.string().min(1).max(200),
   content: z.string().min(1).max(50000),
   folder_id: z.string().uuid().nullable().optional(),
+  draft_id: z.string().uuid().optional(),
 })
+
+/** Move draft inline images to the note scope and rewrite markdown URLs. */
+async function promoteDraftImages(
+  userId: string,
+  noteId: string,
+  draftId: string,
+  content: string
+): Promise<string> {
+  const draftPrefix = `notes/${userId}/d/${draftId}/`
+  const keys = await listObjectKeys(draftPrefix)
+  for (const key of keys) {
+    const filename = key.slice(draftPrefix.length)
+    if (!filename) continue
+    const dest = noteImageR2Key(userId, 'n', noteId, filename)
+    await copyObject(key, dest)
+    await deleteObject(key).catch(() => {})
+  }
+
+  const from = `/api/notes/images/d/${draftId}/`
+  const to = `/api/notes/images/n/${noteId}/`
+  return content.split(from).join(to)
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createServerSupabaseClient()
@@ -34,7 +59,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { title, content, folder_id: folderId } = parsed.data
+  const { title, folder_id: folderId, draft_id: draftId } = parsed.data
+  let content = parsed.data.content
   const contentBytes = Buffer.byteLength(content, 'utf8')
 
   if (folderId) {
@@ -80,6 +106,25 @@ export async function POST(req: NextRequest) {
     const r2Key = `notes/${userId}/${doc.id}`
     await supabase.from('documents').update({ r2_key: r2Key }).eq('id', doc.id)
 
+    if (draftId) {
+      try {
+        content = await promoteDraftImages(userId, doc.id, draftId, content)
+        const size = Buffer.byteLength(content, 'utf8')
+        await supabase
+          .from('documents')
+          .update({ note_content: content, file_size_bytes: size })
+          .eq('id', doc.id)
+      } catch (err) {
+        logger.error('Failed to promote note draft images', {
+          err,
+          userId,
+          documentId: doc.id,
+          draftId,
+        })
+        // Keep draft URLs — images still readable via /d/ scope
+      }
+    }
+
     try {
       await enqueueIngestionJob({
         document_id: doc.id,
@@ -90,6 +135,9 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       logger.error('Failed to queue note for ingestion', { err, userId, documentId: doc.id })
       await cleanupFailedUpload(supabase, doc.id, userId, r2Key)
+      const prefix = noteImagesPrefix(userId, doc.id)
+      const keys = await listObjectKeys(prefix).catch(() => [] as string[])
+      await Promise.all(keys.map((k) => deleteObject(k).catch(() => {})))
       return NextResponse.json({ error: 'Failed to queue note for processing' }, { status: 500 })
     }
 

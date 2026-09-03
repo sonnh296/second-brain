@@ -54,13 +54,16 @@ const ingestionWorker = new Worker<IngestionJobData>(
         filename
       )
     } else {
+      const maxAttempts = job.opts.attempts ?? 1
+      const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts
       await runIngestionPipeline(
         document_id,
         r2_key,
         file_type,
         user_id,
         filename,
-        manual_content
+        manual_content,
+        { markFailedOnError: isFinalAttempt }
       )
     }
     logger.info('Ingestion job completed', {

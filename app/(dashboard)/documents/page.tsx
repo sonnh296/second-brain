@@ -133,6 +133,7 @@ export default function DocumentsPage() {
   const [uploadDescription, setUploadDescription] = useState("");
   const [uploadTagIds, setUploadTagIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadFilename, setUploadFilename] = useState("");
   const [reuploadDoc, setReuploadDoc] = useState<Document | null>(null);
   const [tags, setTags] = useState<TagType[]>([]);
   const [tagFilter, setTagFilter] = useState<string | "all">("all");
@@ -193,6 +194,7 @@ export default function DocumentsPage() {
   const [noteContent, setNoteContent] = useState("");
   const [noteInitialTitle, setNoteInitialTitle] = useState("");
   const [noteInitialContent, setNoteInitialContent] = useState("");
+  const [noteDraftId, setNoteDraftId] = useState(() => crypto.randomUUID());
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const [panelSaveError, setPanelSaveError] = useState("");
@@ -696,6 +698,7 @@ export default function DocumentsPage() {
   function openReupload(doc: Document) {
     setReuploadDoc(doc);
     setSelectedFile(null);
+    setUploadFilename("");
     setUploadDescription("");
     setUploadTagIds([]);
     setUploadError("");
@@ -708,6 +711,7 @@ export default function DocumentsPage() {
     if (uploading) return;
     setShowUploadModal(false);
     setSelectedFile(null);
+    setUploadFilename("");
     setUploadDescription("");
     setUploadTagIds([]);
     setUploadError("");
@@ -715,8 +719,14 @@ export default function DocumentsPage() {
     setReuploadDoc(null);
   }
 
+  function selectUploadFile(file: File | null) {
+    setSelectedFile(file);
+    setUploadFilename(file?.name ?? "");
+  }
+
   async function handleUpload() {
     if (!selectedFile) return;
+    const filename = uploadFilename.trim() || selectedFile.name;
     setUploading(true);
     setUploadError("");
     setUploadProgress(0);
@@ -732,11 +742,11 @@ export default function DocumentsPage() {
           body: JSON.stringify(
             reuploadDoc
               ? {
-                  filename: selectedFile.name,
+                  filename,
                   size: selectedFile.size,
                 }
               : {
-                  filename: selectedFile.name,
+                  filename,
                   size: selectedFile.size,
                   description: uploadDescription.trim() || undefined,
                   folder_id: currentFolderId ?? undefined,
@@ -785,7 +795,7 @@ export default function DocumentsPage() {
         });
       }
 
-      const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(selectedFile.name);
+      const isMedia = /\.(mp4|mov|mp3|wav)$/i.test(filename);
       if (isMedia && !reuploadDoc) {
         await waitForDocumentProcessing(presign.document_id);
       }
@@ -800,6 +810,7 @@ export default function DocumentsPage() {
     setUploadDescription("");
     setUploadTagIds([]);
     setSelectedFile(null);
+    setUploadFilename("");
     setReuploadDoc(null);
     setShowUploadModal(false);
     await refreshFolderView(currentFolderId);
@@ -811,6 +822,7 @@ export default function DocumentsPage() {
     setNoteContent("");
     setNoteInitialTitle("");
     setNoteInitialContent("");
+    setNoteDraftId(crypto.randomUUID());
     setNoteError("");
   }
 
@@ -851,6 +863,7 @@ export default function DocumentsPage() {
           title: noteTitle.trim(),
           content: noteContent.trim(),
           folder_id: currentFolderId,
+          draft_id: noteDraftId,
         }),
       });
       const data = await res.json();
@@ -1719,6 +1732,7 @@ export default function DocumentsPage() {
                     setUploadDescription("");
                     setUploadTagIds([]);
                     setSelectedFile(null);
+                    setUploadFilename("");
                     setUploadError("");
                     setShowUploadModal(true);
                   }}
@@ -2289,6 +2303,11 @@ export default function DocumentsPage() {
           initialContent={noteInitialContent}
           saving={savingNote}
           error={noteError}
+          imageScope={
+            noteModal.mode === "edit" && noteModal.doc
+              ? { kind: "n", id: noteModal.doc.id }
+              : { kind: "d", id: noteDraftId }
+          }
           onTitleChange={setNoteTitle}
           onContentChange={setNoteContent}
           onSave={saveNote}
@@ -2300,13 +2319,15 @@ export default function DocumentsPage() {
         open={showUploadModal}
         reuploadDoc={reuploadDoc}
         selectedFile={selectedFile}
+        filename={uploadFilename}
         description={uploadDescription}
         tagIds={uploadTagIds}
         allTags={tags}
         uploading={uploading}
         uploadProgress={uploadProgress}
         error={uploadError}
-        onFileSelect={setSelectedFile}
+        onFileSelect={selectUploadFile}
+        onFilenameChange={setUploadFilename}
         onDescriptionChange={setUploadDescription}
         onTagIdsChange={setUploadTagIds}
         onSubmit={handleUpload}

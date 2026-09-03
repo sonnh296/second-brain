@@ -264,6 +264,7 @@ async function indexExtractedText(
       status: 'done',
       chunk_count: chunks.length,
       extracted_content: storedContent,
+      error_message: null,
     })
     .eq('id', documentId)
 }
@@ -274,7 +275,8 @@ export async function runIngestionPipeline(
   fileType: string,
   userId: string,
   filename: string,
-  manualContent?: string
+  manualContent?: string,
+  options?: { markFailedOnError?: boolean }
 ): Promise<void> {
   // os.tmpdir() respects TMPDIR — on the server this must point to disk,
   // because /tmp is a small RAM-backed tmpfs that large videos would fill.
@@ -334,6 +336,7 @@ export async function runIngestionPipeline(
 
     let rawText: string
     let pageOffsets: PageOffset[] | null = null
+    let noteOcrText: string | undefined
 
     if (manualContent?.trim()) {
       rawText = manualContent.trim()
@@ -347,6 +350,30 @@ export async function runIngestionPipeline(
         throw new Error('Note content is empty')
       }
       rawText = doc.note_content
+
+      // Inline images: OCR with Google Vision and append for RAG (same path as image docs)
+      try {
+        const { extractOcrFromNoteImages } = await import('../notes/images')
+        const { ocrText, imageCount, usableCount } = await extractOcrFromNoteImages(
+          userId,
+          doc.note_content
+        )
+        if (ocrText) {
+          noteOcrText = ocrText
+          rawText = `${rawText}\n\n${ocrText}`
+        }
+        if (imageCount > 0) {
+          logger.info('Note inline image OCR finished', {
+            documentId,
+            userId,
+            imageCount,
+            usableCount,
+            ocrChars: ocrText.length,
+          })
+        }
+      } catch (err) {
+        logger.warn('Note inline image OCR skipped', { err, documentId, userId })
+      }
     } else {
       try {
         await downloadToFile(r2Key, tempPath!)
@@ -437,7 +464,11 @@ export async function runIngestionPipeline(
       userId,
       displayFilename,
       rawText,
-      canOcr ? { ocr_text: rawText } : undefined,
+      canOcr
+        ? { ocr_text: rawText }
+        : noteOcrText
+          ? { ocr_text: noteOcrText }
+          : undefined,
       pageOffsets
     )
   } catch (err) {
@@ -445,10 +476,19 @@ export async function runIngestionPipeline(
     logger.error('Ingestion failed', { err: message, documentId, userId })
     try {
       const supabase = createServiceSupabaseClient()
-      await supabase
-        .from('documents')
-        .update({ status: 'failed', error_message: message })
-        .eq('id', documentId)
+      // Only mark failed on the final BullMQ attempt — intermediate failures
+      // stay "processing" so the UI keeps polling through retries.
+      if (options?.markFailedOnError !== false) {
+        await supabase
+          .from('documents')
+          .update({ status: 'failed', error_message: message })
+          .eq('id', documentId)
+      } else {
+        await supabase
+          .from('documents')
+          .update({ status: 'processing', error_message: null })
+          .eq('id', documentId)
+      }
     } catch {
       // env not configured — can't update DB
     }

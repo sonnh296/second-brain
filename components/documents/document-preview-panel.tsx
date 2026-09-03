@@ -16,11 +16,13 @@ import { cn } from '@/lib/utils'
 import {
   isBrowserInlineType,
   isImageType,
+  isSpreadsheetType,
   isTranscribableType,
   MAX_DOCUMENT_DESCRIPTION_LENGTH,
 } from '@/lib/upload/file-types'
 import { isOcrWeakContentWarning } from '@/lib/ingestion/ocr-status'
 import type { Document, Tag } from '@/lib/db/types'
+import { SpreadsheetPreview } from '@/components/documents/spreadsheet-preview'
 
 type PanelTab = 'content' | 'subtitles' | 'description' | 'details'
 
@@ -160,6 +162,23 @@ function ZoomableImage({
     originX: number
     originY: number
   }>({ active: false, moved: false, startX: 0, startY: 0, originX: 0, originY: 0 })
+  const fsDragRef = useRef<{
+    active: boolean
+    moved: boolean
+    backdrop: boolean
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  }>({
+    active: false,
+    moved: false,
+    backdrop: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  })
   const viewportRef = useRef<HTMLDivElement>(null)
   const fsViewportRef = useRef<HTMLDivElement>(null)
 
@@ -294,34 +313,46 @@ function ZoomableImage({
   }
 
   function onFsPointerDown(e: React.PointerEvent) {
-    if (fsScale <= 1) return
+    // Ignore toolbar / chrome — only the stage handles pan/close.
+    if (e.target !== e.currentTarget && !(e.target instanceof HTMLImageElement)) return
+    e.preventDefault()
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = {
+    fsDragRef.current = {
       active: true,
       moved: false,
+      backdrop: e.target === e.currentTarget,
       startX: e.clientX,
       startY: e.clientY,
-      originX: fsOffset.x,
-      originY: fsOffset.y,
+      originX: fsScale > 1 ? fsOffset.x : 0,
+      originY: fsScale > 1 ? fsOffset.y : 0,
     }
   }
 
   function onFsPointerMove(e: React.PointerEvent) {
-    if (!dragRef.current.active || fsScale <= 1) return
+    if (!fsDragRef.current.active) return
+    const dx = e.clientX - fsDragRef.current.startX
+    const dy = e.clientY - fsDragRef.current.startY
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) fsDragRef.current.moved = true
+    if (fsScale <= 1) return
     setFsOffset({
-      x: dragRef.current.originX + (e.clientX - dragRef.current.startX),
-      y: dragRef.current.originY + (e.clientY - dragRef.current.startY),
+      x: fsDragRef.current.originX + dx,
+      y: fsDragRef.current.originY + dy,
     })
   }
 
   function onFsPointerUp(e: React.PointerEvent) {
-    dragRef.current.active = false
+    if (!fsDragRef.current.active) return
+    const { moved, backdrop } = fsDragRef.current
+    fsDragRef.current.active = false
     try {
       e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {
       /* ignore */
     }
+    // Close only on a real backdrop click — not after a pan gesture.
+    // (Click-after-drag often retargets to the viewport and used to dismiss fullscreen.)
+    if (!moved && backdrop) closeFullscreen()
   }
 
   return (
@@ -470,9 +501,6 @@ function ZoomableImage({
               'flex-1 min-h-0 relative overflow-hidden touch-none select-none cursor-zoom-in',
               fsScale > 1 && 'cursor-grab active:cursor-grabbing'
             )}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) closeFullscreen()
-            }}
             onPointerDown={onFsPointerDown}
             onPointerMove={onFsPointerMove}
             onPointerUp={onFsPointerUp}
@@ -616,6 +644,8 @@ export function ContentPreview({
     (doc.file_type === 'note' ||
       ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
         Boolean(preview?.content)))
+  const noteImageScope =
+    doc.file_type === 'note' ? ({ kind: 'n' as const, id: doc.id }) : undefined
 
   useEffect(() => {
     setAssetLoading(true)
@@ -629,12 +659,13 @@ export function ContentPreview({
     )
   }
 
-  // Media/images can be viewed while processing, or after a soft OCR warning / hard fail.
+  // Media/images/spreadsheets can be viewed while processing, or after a soft OCR warning / hard fail.
   if (
     doc.status !== 'done' &&
     doc.file_type !== 'note' &&
     !isMedia &&
-    !isImageType(doc.file_type)
+    !isImageType(doc.file_type) &&
+    !isSpreadsheetType(doc.file_type)
   ) {
     return (
       <PreviewBody>
@@ -660,6 +691,17 @@ export function ContentPreview({
             )}
           />
         </AssetPreviewFrame>
+      </PreviewBody>
+    )
+  }
+
+  if (isSpreadsheetType(fileType)) {
+    return (
+      <PreviewBody className={layout === 'page' ? 'min-h-[50vh]' : undefined}>
+        <SpreadsheetPreview
+          downloadUrl={baseViewerUrl}
+          filename={preview?.filename ?? doc.filename}
+        />
       </PreviewBody>
     )
   }
@@ -695,6 +737,7 @@ export function ContentPreview({
                 minHeightClass="min-h-0"
                 className="flex-1"
                 placeholder="Chỉnh sửa nội dung..."
+                imageScope={noteImageScope}
               />
             ) : (
               <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded border bg-background p-3">
@@ -764,6 +807,7 @@ export function ContentPreview({
               minHeightClass="min-h-0"
               className="flex-1"
               placeholder="Viết nội dung..."
+              imageScope={noteImageScope}
             />
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded border bg-background p-3">
@@ -975,7 +1019,8 @@ export function DocumentPreviewPanel({
     doc.file_type === 'note' ||
     doc.status === 'done' ||
     isMedia ||
-    isImageType(doc.file_type)
+    isImageType(doc.file_type) ||
+    isSpreadsheetType(doc.file_type)
   const showWeakOcrPrompt =
     Boolean(onKeepWeakOcr) && isOcrWeakContentWarning(doc.error_message) && doc.status === 'done'
 

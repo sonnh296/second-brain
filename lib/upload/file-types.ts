@@ -8,6 +8,8 @@ export const INDEXABLE_TYPES = new Set([
   'json',
   'html',
   'note',
+  'xlsx',
+  'xls',
 ])
 
 export const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'])
@@ -159,6 +161,10 @@ export function isIndexableType(fileType: string): boolean {
 
 export function isImageType(fileType: string): boolean {
   return IMAGE_TYPES.has(fileType)
+}
+
+export function isSpreadsheetType(fileType: string): boolean {
+  return fileType === 'xlsx' || fileType === 'xls'
 }
 
 export function isTranscribableType(fileType: string): boolean {

@@ -1,12 +1,19 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { deleteObject } from '@/lib/storage'
+import { deleteObject, listObjectKeys } from '@/lib/storage'
 import { deleteByDocument } from '@/lib/vector'
 import { enqueueDocumentCleanupJob } from '@/lib/queue'
 import { documentThumbnailKey } from '@/lib/storage/thumbnail-key'
+import { noteImagesPrefix } from '@/lib/notes/images'
 import { logger } from '@/lib/logger'
 
 function isStoredFileKey(r2Key: string): boolean {
   return r2Key !== 'pending' && r2Key !== 'note' && !r2Key.startsWith('notes/')
+}
+
+async function deleteNoteInlineImages(userId: string, documentId: string): Promise<void> {
+  const prefix = noteImagesPrefix(userId, documentId)
+  const keys = await listObjectKeys(prefix)
+  await Promise.all(keys.map((key) => deleteObject(key).catch(() => {})))
 }
 
 export type HardDeleteResult =
@@ -40,6 +47,20 @@ export async function hardDeleteDocument(
         documentId: doc.id,
         userId,
         r2Key: doc.r2_key,
+      })
+      failures.push('r2')
+    }
+  }
+
+  // Note placeholder keys (`notes/{userId}/{docId}`) plus inline images under n/{noteId}/
+  if (doc.r2_key.startsWith('notes/') || doc.r2_key === 'note') {
+    try {
+      await deleteNoteInlineImages(userId, doc.id)
+    } catch (err) {
+      logger.error('Note inline image cleanup failed', {
+        err,
+        documentId: doc.id,
+        userId,
       })
       failures.push('r2')
     }

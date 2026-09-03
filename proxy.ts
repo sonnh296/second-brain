@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { withSessionMaxAge } from '@/lib/auth/session'
+import { isTransientAuthError, withSessionMaxAge } from '@/lib/auth/session'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -25,10 +25,6 @@ export async function proxy(request: NextRequest) {
       },
     }
   )
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
 
@@ -58,6 +54,39 @@ export async function proxy(request: NextRequest) {
     pathname === '/api/auth/signup' ||
     pathname === '/api/auth/confirm' ||
     pathname === '/api/auth/google'
+
+  let user: { id: string } | null = null
+  try {
+    const result = await supabase.auth.getUser()
+    if (result.error && isTransientAuthError(result.error)) {
+      if (isProtectedApi && !isPublicAuthApi) {
+        return NextResponse.json(
+          {
+            error: 'Không kết nối được máy chủ xác thực. Thử lại sau giây lát.',
+            code: 'auth_unavailable',
+          },
+          { status: 503 }
+        )
+      }
+      // Soft-fail pages: continue; route handlers will re-check auth.
+      return supabaseResponse
+    }
+    user = result.data.user
+  } catch (err) {
+    if (isTransientAuthError(err)) {
+      if (isProtectedApi && !isPublicAuthApi) {
+        return NextResponse.json(
+          {
+            error: 'Không kết nối được máy chủ xác thực. Thử lại sau giây lát.',
+            code: 'auth_unavailable',
+          },
+          { status: 503 }
+        )
+      }
+      return supabaseResponse
+    }
+    throw err
+  }
 
   if ((isProtectedPage || isProtectedApi) && !isPublicAuthApi && !user) {
     if (isProtectedApi) {
@@ -96,6 +125,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Exclude /api/upload — proxy buffers/truncates multipart body causing upload failures
+  // Also exclude /api/notes/images (multipart) — auth is checked in the route itself
   matcher: [
     '/home',
     '/home/:path*',

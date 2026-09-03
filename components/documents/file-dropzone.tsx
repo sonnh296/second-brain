@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Upload, File as FileIcon, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { UPLOAD_ACCEPT } from '@/lib/upload/file-types'
 
@@ -14,16 +15,35 @@ const IMAGE_PREVIEW_TYPES = new Set([
   'image/svg+xml',
 ])
 
+function splitFilename(filename: string): { base: string; ext: string } {
+  const i = filename.lastIndexOf('.')
+  if (i <= 0) return { base: filename, ext: '' }
+  return { base: filename.slice(0, i), ext: filename.slice(i) }
+}
+
 interface FileDropzoneProps {
   disabled?: boolean
   onFileSelect: (file: File | null) => void
   selectedFile: File | null
+  /** Editable display name (keeps original extension). */
+  filename?: string
+  onFilenameChange?: (filename: string) => void
 }
 
-export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropzoneProps) {
+export function FileDropzone({
+  disabled,
+  onFileSelect,
+  selectedFile,
+  filename,
+  onFilenameChange,
+}: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+
+  const displayName = filename ?? selectedFile?.name ?? ''
+  const { base, ext } = splitFilename(displayName)
+  const canRename = Boolean(selectedFile && onFilenameChange)
 
   useEffect(() => {
     if (!selectedFile || !IMAGE_PREVIEW_TYPES.has(selectedFile.type)) {
@@ -103,15 +123,37 @@ export function FileDropzone({ disabled, onFileSelect, selectedFile }: FileDropz
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={imagePreviewUrl}
-                alt={selectedFile.name}
+                alt={displayName || selectedFile.name}
                 className="max-h-64 w-auto max-w-full rounded-md border object-contain bg-muted/40"
               />
             ) : (
               <FileIcon className="h-8 w-8 text-primary shrink-0" />
             )}
-            <p className="text-sm font-medium text-center break-all px-2 max-w-2xl">
-              {selectedFile.name}
-            </p>
+            {canRename ? (
+              <div
+                className="flex items-center justify-center gap-1 w-full max-w-md px-2"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Input
+                  value={base}
+                  onChange={(e) => onFilenameChange!(`${e.target.value}${ext}`)}
+                  disabled={disabled}
+                  placeholder="Tên file"
+                  aria-label="Tên file"
+                  className="h-8 text-sm text-center font-medium"
+                />
+                {ext ? (
+                  <span className="text-sm text-muted-foreground shrink-0 tabular-nums">
+                    {ext}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm font-medium text-center break-all px-2 max-w-2xl">
+                {displayName || selectedFile.name}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
             </p>

@@ -28,6 +28,16 @@ export function MarkdownContent({ content, className }: { content: string; class
               {children}
             </a>
           ),
+          img: ({ src, alt }) =>
+            src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={src}
+                alt={alt ?? ''}
+                className="rounded-md max-w-full h-auto my-2 border border-border"
+                loading="lazy"
+              />
+            ) : null,
         }}
       >
         {content}

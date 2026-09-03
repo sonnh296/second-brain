@@ -16,7 +16,7 @@ import { StatusBadge } from '@/components/documents/document-grid'
 import type { PreviewData } from '@/components/documents/types'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { TYPE_LABELS, isBrowserInlineType, isImageType, isTranscribableType } from '@/lib/upload/file-types'
+import { TYPE_LABELS, isBrowserInlineType, isImageType, isSpreadsheetType, isTranscribableType } from '@/lib/upload/file-types'
 import { formatBytes } from '@/lib/usage/format'
 import type { Document, Tag } from '@/lib/db/types'
 
@@ -63,7 +63,8 @@ export function DocumentViewerPage({ documentId }: { documentId: string }) {
     (doc.file_type === 'note' ||
       doc.status === 'done' ||
       isMedia ||
-      isImageType(doc.file_type))
+      isImageType(doc.file_type) ||
+      isSpreadsheetType(doc.file_type))
 
   useEffect(() => {
     setSidebarTab(resolveSidebarTab(initialTab))

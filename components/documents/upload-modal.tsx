@@ -17,6 +17,7 @@ interface UploadModalProps {
   open: boolean
   reuploadDoc: Document | null
   selectedFile: File | null
+  filename: string
   description: string
   tagIds: string[]
   allTags: Tag[]
@@ -24,6 +25,7 @@ interface UploadModalProps {
   uploadProgress: number | null
   error: string
   onFileSelect: (file: File | null) => void
+  onFilenameChange: (v: string) => void
   onDescriptionChange: (v: string) => void
   onTagIdsChange: (ids: string[]) => void
   onSubmit: () => void | Promise<void>
@@ -34,6 +36,7 @@ export function UploadModal({
   open,
   reuploadDoc,
   selectedFile,
+  filename,
   description,
   tagIds,
   allTags,
@@ -41,6 +44,7 @@ export function UploadModal({
   uploadProgress,
   error,
   onFileSelect,
+  onFilenameChange,
   onDescriptionChange,
   onTagIdsChange,
   onSubmit,
@@ -63,6 +67,11 @@ export function UploadModal({
   }, [open, uploading, onClose])
 
   if (!open) return null
+
+  const nameBase = filename.includes('.')
+    ? filename.slice(0, filename.lastIndexOf('.'))
+    : filename
+  const canSave = Boolean(selectedFile && nameBase.trim())
 
   const tabBtn = (id: UploadTab, label: string) => (
     <button
@@ -136,7 +145,9 @@ export function UploadModal({
               <FileDropzone
                 disabled={uploading}
                 selectedFile={selectedFile}
+                filename={filename}
                 onFileSelect={onFileSelect}
+                onFilenameChange={onFilenameChange}
               />
             </div>
           )}
@@ -208,11 +219,11 @@ export function UploadModal({
               type="button"
               className={cn(
                 'flex-1',
-                !selectedFile &&
+                !canSave &&
                   'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
               )}
-              variant={selectedFile ? 'default' : 'secondary'}
-              disabled={uploading || !selectedFile}
+              variant={canSave ? 'default' : 'secondary'}
+              disabled={uploading || !canSave}
               onClick={() => void onSubmit()}
             >
               {uploading ? 'Đang lưu...' : 'Lưu'}
