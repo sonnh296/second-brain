@@ -8,6 +8,7 @@ import {
   ContentPreview,
   ContentPreviewFooter,
   DescriptionPanel,
+  OcrDetailsSection,
   SubtitlesPanel,
   type DocumentPanelTab,
 } from '@/components/documents/document-preview-panel'
@@ -342,6 +343,14 @@ export function DocumentViewerPage({ documentId }: { documentId: string }) {
                   <p>Ngày tạo: {new Date(doc.created_at).toLocaleDateString('vi-VN')}</p>
                   <StatusBadge status={doc.status} />
                 </div>
+                <OcrDetailsSection
+                  doc={doc}
+                  preview={preview}
+                  editContent={editContent}
+                  savingContent={savingContent}
+                  onEditContent={setEditContent}
+                  onSaveContent={saveContent}
+                />
                 {!fromChat && (
                   <Link
                     href="/documents"

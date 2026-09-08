@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Plus, LogIn, GraduationCap } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ClassroomModal } from '@/components/classroom/classroom-modal'
 
 type ClassRow = {
   id: string
@@ -39,6 +43,24 @@ export default function ClassroomHomePage() {
     void load()
   }, [load])
 
+  function openCreate() {
+    setError(null)
+    setName('')
+    setMode('create')
+  }
+
+  function openJoin() {
+    setError(null)
+    setCode('')
+    setMode('join')
+  }
+
+  function closeModal() {
+    if (busy) return
+    setMode('none')
+    setError(null)
+  }
+
   async function createClass() {
     if (!name.trim() || busy) return
     setBusy(true)
@@ -55,6 +77,7 @@ export default function ClassroomHomePage() {
       return
     }
     const c = await res.json()
+    setMode('none')
     router.push(`/classroom/${c.id}`)
   }
 
@@ -74,6 +97,7 @@ export default function ClassroomHomePage() {
       return
     }
     const d = await res.json()
+    setMode('none')
     router.push(`/classroom/${d.classroom_id}`)
   }
 
@@ -84,75 +108,51 @@ export default function ClassroomHomePage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="shrink-0 border-b px-3 sm:px-4 py-2.5 flex flex-wrap items-center gap-2">
-        <h1 className="text-sm font-semibold">Lớp học</h1>
-        <div className="ml-auto flex gap-1">
-          <button
+      <div className="shrink-0 border-b px-3 sm:px-4 py-3 flex flex-wrap items-center gap-3">
+        <h1 className="text-base font-semibold tracking-tight">Lớp học</h1>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
             type="button"
-            onClick={() => setMode(mode === 'create' ? 'none' : 'create')}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+            variant="outline"
+            size="sm"
+            onClick={openCreate}
+            className="h-8 gap-1.5 px-3 text-sm border-border bg-background shadow-sm"
           >
-            <Plus className="h-3.5 w-3.5" /> Tạo lớp
-          </button>
-          <button
+            <Plus className="h-4 w-4" />
+            Tạo lớp
+          </Button>
+          <Button
             type="button"
-            onClick={() => setMode(mode === 'join' ? 'none' : 'join')}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+            variant="secondary"
+            size="sm"
+            onClick={openJoin}
+            className="h-8 gap-1.5 px-3 text-sm shadow-sm"
           >
-            <LogIn className="h-3.5 w-3.5" /> Vào lớp
-          </button>
+            <LogIn className="h-4 w-4" />
+            Vào lớp
+          </Button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-4">
-        {mode === 'create' && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border p-2">
-            <input
-              className="flex-1 min-w-[160px] rounded-md border px-2 py-1.5 text-sm bg-background"
-              placeholder="Tên lớp"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && void createClass()}
-              autoFocus
-            />
-            <button
-              type="button"
-              disabled={busy || !name.trim()}
-              onClick={() => void createClass()}
-              className="rounded-md bg-foreground text-background px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-            >
-              Tạo
-            </button>
-          </div>
-        )}
-
-        {mode === 'join' && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border p-2">
-            <input
-              className="flex-1 min-w-[120px] rounded-md border px-2 py-1.5 text-sm bg-background uppercase tracking-widest"
-              placeholder="Mã lớp"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && void joinClass()}
-              autoFocus
-            />
-            <button
-              type="button"
-              disabled={busy || !code.trim()}
-              onClick={() => void joinClass()}
-              className="rounded-md bg-foreground text-background px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-            >
-              Vào
-            </button>
-          </div>
-        )}
-
-        {error && <p className="text-xs text-red-600">{error}</p>}
-
         {loading ? (
           <p className="text-xs text-muted-foreground">Đang tải...</p>
         ) : all.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-12">Chưa có lớp</p>
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <GraduationCap className="h-10 w-10 text-muted-foreground/60" />
+            <p className="text-sm text-muted-foreground">Chưa có lớp</p>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              Tạo lớp mới hoặc nhập mã để vào lớp của giáo viên.
+            </p>
+            <div className="flex gap-2 mt-1">
+              <Button type="button" variant="outline" size="sm" onClick={openCreate}>
+                Tạo lớp
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={openJoin}>
+                Vào lớp
+              </Button>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {all.map((c) => (
@@ -175,6 +175,79 @@ export default function ClassroomHomePage() {
           </div>
         )}
       </div>
+
+      <ClassroomModal
+        open={mode === 'create'}
+        title="Tạo lớp"
+        onClose={closeModal}
+        busy={busy}
+        footer={
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={closeModal} disabled={busy}>
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={busy || !name.trim()}
+              onClick={() => void createClass()}
+            >
+              {busy ? 'Đang tạo...' : 'Tạo lớp'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="class-name">Tên lớp</Label>
+          <Input
+            id="class-name"
+            placeholder="Ví dụ: Toán 12A1"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void createClass()}
+            autoFocus
+            disabled={busy}
+          />
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </ClassroomModal>
+
+      <ClassroomModal
+        open={mode === 'join'}
+        title="Vào lớp"
+        onClose={closeModal}
+        busy={busy}
+        footer={
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={closeModal} disabled={busy}>
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={busy || !code.trim()}
+              onClick={() => void joinClass()}
+            >
+              {busy ? 'Đang vào...' : 'Vào lớp'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="class-code">Mã lớp</Label>
+          <Input
+            id="class-code"
+            placeholder="Nhập mã lớp"
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && void joinClass()}
+            className="uppercase tracking-widest font-mono"
+            autoFocus
+            disabled={busy}
+          />
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </ClassroomModal>
     </div>
   )
 }

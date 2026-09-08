@@ -11,6 +11,44 @@ import { isBrowserInlineType, mimeForType } from '@/lib/upload/file-types'
 
 type Ctx = { params: Promise<{ id: string; docId: string }> }
 
+function contentDisposition(filename: string, inline: boolean): string {
+  const encoded = encodeURIComponent(filename)
+  const mode = inline ? 'inline' : 'attachment'
+  return `${mode}; filename="${encoded}"; filename*=UTF-8''${encoded}`
+}
+
+/** Parse `bytes=start-end` / `bytes=start-`. Returns null if malformed. */
+function parseBytesRange(
+  header: string | null,
+  size: number
+): { start: number; end: number } | null {
+  if (!header || size <= 0) return null
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim())
+  if (!match) return null
+
+  const startRaw = match[1]
+  const endRaw = match[2]
+  if (!startRaw && !endRaw) return null
+
+  let start: number
+  let end: number
+
+  if (!startRaw) {
+    const suffix = parseInt(endRaw, 10)
+    if (!Number.isFinite(suffix) || suffix <= 0) return null
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = parseInt(startRaw, 10)
+    end = endRaw ? parseInt(endRaw, 10) : size - 1
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null
+  }
+
+  if (start < 0 || end < start || start >= size) return null
+  end = Math.min(end, size - 1)
+  return { start, end }
+}
+
 export async function GET(req: NextRequest, ctx: Ctx) {
   const { id, docId } = await ctx.params
   const supabase = await createServerSupabaseClient()
@@ -40,21 +78,48 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     !forceDownload && (isBrowserInlineType(doc.file_type) || mime.startsWith('text/'))
 
   const meta = await headObject(doc.r2_key)
-  const { stream, contentType, contentLength } = await getObjectStream(doc.r2_key)
+  const size = meta?.size ?? 0
+  const rangeHeader = req.headers.get('range')
+  const range = parseBytesRange(rangeHeader, size)
+
+  if (rangeHeader && size > 0 && !range) {
+    return new NextResponse(null, {
+      status: 416,
+      headers: {
+        'Content-Range': `bytes */${size}`,
+        'Accept-Ranges': 'bytes',
+      },
+    })
+  }
+
+  const ranged = Boolean(range)
+  const { stream, contentType, contentLength, contentRange } = await getObjectStream(
+    doc.r2_key,
+    ranged ? { range: `bytes=${range!.start}-${range!.end}` } : undefined
+  )
+
   const resolvedType = contentType?.startsWith('application/octet')
     ? mime
     : (contentType ?? mime)
 
-  const encoded = encodeURIComponent(doc.filename)
+  const headers: Record<string, string> = {
+    'Content-Type': resolvedType,
+    'Content-Disposition': contentDisposition(doc.filename, inline),
+    'X-Content-Type-Options': 'nosniff',
+    'Accept-Ranges': 'bytes',
+  }
+
+  if (ranged && range) {
+    headers['Content-Range'] =
+      contentRange ?? `bytes ${range.start}-${range.end}/${size}`
+    headers['Content-Length'] = String(contentLength ?? range.end - range.start + 1)
+  } else if (size > 0 || contentLength) {
+    headers['Content-Length'] = String(contentLength ?? size)
+  }
+
   return new NextResponse(Readable.toWeb(stream) as ReadableStream, {
-    headers: {
-      'Content-Type': resolvedType,
-      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${encoded}"; filename*=UTF-8''${encoded}`,
-      'X-Content-Type-Options': 'nosniff',
-      ...(meta?.size || contentLength
-        ? { 'Content-Length': String(contentLength ?? meta?.size) }
-        : {}),
-    },
+    status: ranged ? 206 : 200,
+    headers,
   })
 }
 

@@ -64,12 +64,16 @@ export async function hybridSearchClassroom(
   query: string,
   vector: number[],
   topK: number,
-  options: { serviceRole?: boolean } = {}
+  options: { serviceRole?: boolean; documentIds?: string[] } = {}
 ): Promise<SearchResult[]> {
   const candidateCount = Number(process.env.RERANK_CANDIDATES ?? 20)
+  const documentIds = options.documentIds
+
+  // Explicit empty scope (e.g. lesson with no docs) must not fall back to whole class.
+  if (documentIds && documentIds.length === 0) return []
 
   const [vectorResults, keywordResults] = await Promise.all([
-    searchClassroomChunks(classroomId, vector, candidateCount),
+    searchClassroomChunks(classroomId, vector, candidateCount, { documentIds }),
     keywordSearchClassroom(
       supabase,
       classroomId,
@@ -79,13 +83,19 @@ export async function hybridSearchClassroom(
     ),
   ])
 
+  const filteredKeyword =
+    documentIds && documentIds.length > 0
+      ? keywordResults.filter((r) => documentIds.includes(r.document_id))
+      : keywordResults
+
   logger.info('Classroom hybrid search', {
     classroomId,
     vectorHits: vectorResults.length,
-    keywordHits: keywordResults.length,
+    keywordHits: filteredKeyword.length,
+    documentFilter: documentIds?.length ?? 0,
   })
 
-  return fuseResults(vectorResults, keywordResults, topK)
+  return fuseResults(vectorResults, filteredKeyword, topK)
 }
 
 async function keywordSearchClassroom(

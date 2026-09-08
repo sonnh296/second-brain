@@ -5,14 +5,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   BookOpen,
-  ClipboardList,
   Copy,
   Folder,
   FolderOpen,
   Home,
   Menu,
-  RefreshCw,
-  Search,
+  MessageSquare,
   X,
 } from 'lucide-react'
 
@@ -36,7 +34,6 @@ export function ClassroomWorkspace({
   const [name, setName] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [role, setRole] = useState<'teacher' | 'student'>('student')
-  const [searchQ, setSearchQ] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -62,34 +59,10 @@ export function ClassroomWorkspace({
     void load()
   }, [load])
 
-  async function rotateCode() {
-    const res = await fetch(`/api/classroom/${classId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rotate_code: true }),
-    })
-    if (res.ok) {
-      const d = await res.json()
-      setJoinCode(d.join_code)
-    }
-  }
-
-  function goChat(e?: React.FormEvent) {
-    e?.preventDefault()
-    const q = searchQ.trim()
-    router.push(
-      q
-        ? `/classroom/${classId}/chat?q=${encodeURIComponent(q)}`
-        : `/classroom/${classId}/chat`
-    )
-    setSidebarOpen(false)
-  }
-
   const base = `/classroom/${classId}`
   const onLessons = pathname === base || pathname === `${base}/`
   const onShared = pathname.startsWith(`${base}/shared`)
-  const onAssignments = pathname.startsWith(`${base}/assignments`)
-  const onReview = pathname.startsWith(`${base}/review`)
+  const onExam = pathname.startsWith(`${base}/review`)
   const onChat = pathname.startsWith(`${base}/chat`)
 
   const sidebar = (
@@ -120,20 +93,20 @@ export function ClassroomWorkspace({
         Tài liệu chung
       </Link>
       <Link
-        href={`${base}/assignments`}
-        className={navClass(onAssignments && !pathname.includes('/lessons/'))}
+        href={`${base}/chat`}
+        className={navClass(onChat)}
         onClick={() => setSidebarOpen(false)}
       >
-        <ClipboardList className="h-4 w-4 shrink-0" />
-        Bài tập
+        <MessageSquare className="h-4 w-4 shrink-0" />
+        Chat
       </Link>
       <Link
         href={`${base}/review`}
-        className={navClass(onReview)}
+        className={navClass(onExam)}
         onClick={() => setSidebarOpen(false)}
       >
         <BookOpen className="h-4 w-4 shrink-0" />
-        Ôn tập
+        Ôn thi
       </Link>
     </nav>
   )
@@ -159,34 +132,21 @@ export function ClassroomWorkspace({
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
 
-          <h1 className="text-base sm:text-xl font-semibold truncate min-w-0 max-w-[28%] sm:max-w-none sm:shrink">
+          <h1 className="text-base sm:text-xl font-semibold truncate min-w-0 flex-1">
             {name || '…'}
           </h1>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Link
-              href={`${base}/review`}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm border transition-colors ${
-                onReview
-                  ? 'bg-primary/10 border-primary/30 text-primary font-medium'
-                  : 'hover:bg-muted'
-              }`}
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              <span className="hidden xs:inline sm:inline">Ôn tập</span>
-            </Link>
-            <Link
-              href={`${base}/assignments`}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm border transition-colors ${
-                onAssignments
-                  ? 'bg-primary/10 border-primary/30 text-primary font-medium'
-                  : 'hover:bg-muted'
-              }`}
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              <span className="hidden xs:inline sm:inline">Bài tập</span>
-            </Link>
-          </div>
+          <Link
+            href={`${base}/review`}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm border transition-colors shrink-0 ${
+              onExam
+                ? 'bg-primary/10 border-primary/30 text-primary font-medium'
+                : 'hover:bg-muted'
+            }`}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Ôn thi</span>
+          </Link>
 
           {role === 'teacher' && joinCode && (
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground shrink-0">
@@ -202,29 +162,8 @@ export function ClassroomWorkspace({
               >
                 <Copy className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                className="p-1.5 rounded hover:bg-muted"
-                onClick={() => void rotateCode()}
-                title="Đổi mã"
-                aria-label="Đổi mã lớp"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
             </div>
           )}
-
-          <form onSubmit={goChat} className="relative flex-1 min-w-0 basis-24 sm:basis-56 max-w-xl ml-auto">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <input
-              value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
-              placeholder="Search AI — hỏi tài liệu trong lớp..."
-              className={`w-full h-10 rounded-lg border bg-background pl-9 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                onChat ? 'ring-2 ring-ring' : ''
-              }`}
-            />
-          </form>
         </div>
       </div>
 
@@ -246,7 +185,11 @@ export function ClassroomWorkspace({
         >
           {sidebar}
         </aside>
-        <div className="flex-1 min-w-0 overflow-y-auto">{children}</div>
+        <div
+          className={`flex-1 min-w-0 ${onChat ? 'overflow-hidden' : 'overflow-y-auto'}`}
+        >
+          {children}
+        </div>
       </div>
     </div>
   )

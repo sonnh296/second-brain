@@ -5,8 +5,6 @@ import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ClipboardList } from 'lucide-react'
 
-type Lesson = { id: string; lesson_index: number; title: string }
-
 type AssignmentRow = {
   id: string
   title: string
@@ -26,6 +24,7 @@ export default function AssignmentsListPage() {
   )
 }
 
+/** Legacy list route — bài tập được tạo/xem từ từng buổi học. */
 function AssignmentsListInner() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -33,28 +32,13 @@ function AssignmentsListInner() {
   const createForLesson = searchParams.get('create')
   const [role, setRole] = useState<'teacher' | 'student'>('student')
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
-  const [lessons, setLessons] = useState<Lesson[]>([])
-  const [showCreate, setShowCreate] = useState(false)
-  const [title, setTitle] = useState('')
-  const [lessonId, setLessonId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const [assignRes, classRes] = await Promise.all([
-      fetch(`/api/classroom/${id}/assignments`),
-      fetch(`/api/classroom/${id}`),
-    ])
+    const assignRes = await fetch(`/api/classroom/${id}/assignments`)
     if (assignRes.ok) {
       const d = await assignRes.json()
       setRole(d.role)
       setAssignments(d.assignments ?? [])
-    }
-    if (classRes.ok) {
-      const d = await classRes.json()
-      const ls: Lesson[] = d.lessons ?? []
-      setLessons(ls)
-      if (d.role) setRole(d.role)
     }
   }, [id])
 
@@ -63,90 +47,21 @@ function AssignmentsListInner() {
   }, [load])
 
   useEffect(() => {
-    if (!createForLesson || role !== 'teacher' || lessons.length === 0) return
-    const used = new Set(assignments.map((a) => a.lesson_id))
-    if (used.has(createForLesson)) {
-      const existing = assignments.find((a) => a.lesson_id === createForLesson)
-      if (existing) router.replace(`/classroom/${id}/assignments/${existing.id}`)
+    if (!createForLesson) return
+    const existing = assignments.find((a) => a.lesson_id === createForLesson)
+    if (existing) {
+      router.replace(`/classroom/${id}/assignments/${existing.id}`)
       return
     }
-    const lesson = lessons.find((l) => l.id === createForLesson)
-    if (lesson) {
-      setLessonId(createForLesson)
-      setTitle('')
-      setShowCreate(true)
-      setMsg(null)
-    }
-  }, [createForLesson, role, lessons, assignments, id, router])
-
-  const usedLessonIds = new Set(assignments.map((a) => a.lesson_id))
-  const availableLessons = lessons.filter((l) => !usedLessonIds.has(l.id))
-
-  async function createAssignment() {
-    if (busy || !lessonId || !title.trim()) return
-    setBusy(true)
-    setMsg(null)
-    const res = await fetch(`/api/classroom/${id}/assignments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lesson_id: lessonId, title: title.trim() }),
-    })
-    setBusy(false)
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}))
-      setMsg(d.error ?? 'Không tạo được')
-      return
-    }
-    const created = await res.json()
-    router.push(`/classroom/${id}/assignments/${created.id}`)
-  }
+    // Redirect teachers back to the lesson to create via popup.
+    router.replace(`/classroom/${id}/lessons/${createForLesson}`)
+  }, [createForLesson, assignments, id, router])
 
   return (
     <div className="p-3 sm:p-4 space-y-4">
-      {showCreate && availableLessons.length > 0 && (
-        <div className="rounded-lg border p-3 max-w-lg space-y-2">
-          <input
-            className="w-full rounded-md border px-3 py-2 text-sm"
-            placeholder="Tên bài tập"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            autoFocus
-          />
-          <select
-            className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-            value={lessonId}
-            onChange={(e) => setLessonId(e.target.value)}
-          >
-            {availableLessons.map((l) => (
-              <option key={l.id} value={l.id}>
-                Buổi {l.lesson_index}: {l.title}
-              </option>
-            ))}
-          </select>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={busy || !title.trim() || !lessonId}
-              onClick={() => void createAssignment()}
-              className="rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium disabled:opacity-50"
-            >
-              Tạo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreate(false)
-                setTitle('')
-                setMsg(null)
-              }}
-              className="text-sm text-muted-foreground px-2"
-            >
-              Hủy
-            </button>
-          </div>
-        </div>
-      )}
-      {msg && <p className="text-sm text-red-600">{msg}</p>}
+      <p className="text-sm text-muted-foreground">
+        Bài tập thuộc từng buổi học. Mở một buổi để xem hoặc tạo bài tập.
+      </p>
 
       <div className="flex flex-wrap gap-3">
         {assignments.map((a) => {
@@ -171,7 +86,7 @@ function AssignmentsListInner() {
         })}
       </div>
 
-      {assignments.length === 0 && !showCreate && (
+      {assignments.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {role === 'teacher'
             ? 'Chưa có bài tập — tạo từ trang buổi học'

@@ -41,13 +41,14 @@ export function parseCitationsFromResponse(
       const chunkIndex = parseInt(ref.slice(colonIdx + 1), 10)
       if (Number.isNaN(chunkIndex)) continue
 
-      const found = availableSources.find(
-        (s) => s.filename === filename && s.chunk_index === chunkIndex
-      )
+      const found =
+        availableSources.find(
+          (s) => s.filename === filename && s.chunk_index === chunkIndex
+        ) ?? availableSources.find((s) => s.filename === filename)
       if (found) {
         citedSources.push({
           filename,
-          chunk_index: chunkIndex,
+          chunk_index: found.chunk_index,
           document_id: found.document_id,
           file_type: found.file_type,
           page: found.page,

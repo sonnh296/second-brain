@@ -40,7 +40,7 @@ export function GuestShell({
       </div>
 
       <div className="relative z-10 flex min-h-screen flex-col lg:flex-row">
-        <aside className="flex flex-col justify-between px-6 py-10 sm:px-10 lg:w-[min(44vw,520px)] lg:shrink-0 lg:border-r lg:border-border/50 lg:bg-background/40 lg:px-12 lg:py-14">
+        <aside className="flex flex-col justify-between bg-background/90 px-6 py-10 sm:px-10 lg:w-[min(44vw,520px)] lg:shrink-0 lg:border-r lg:border-border/50 lg:px-12 lg:py-14">
           <div>
             <div className="flex items-center gap-2.5 text-foreground">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/80 bg-background shadow-sm overflow-hidden">

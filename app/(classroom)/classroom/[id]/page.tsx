@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Folder, FolderOpen, Plus } from 'lucide-react'
+import { Folder, Plus } from 'lucide-react'
+import { ClassroomLoading, ClassroomTileSkeleton } from '@/components/classroom/classroom-loading'
 
 type Lesson = { id: string; lesson_index: number; title: string }
 
@@ -13,20 +14,24 @@ const TILE =
 export default function ClassroomDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const [loading, setLoading] = useState(true)
   const [role, setRole] = useState<'teacher' | 'student'>('student')
   const [lessons, setLessons] = useState<Lesson[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    setLoading(true)
     const res = await fetch(`/api/classroom/${id}`)
     if (!res.ok) {
       setError('Không tải được lớp')
+      setLoading(false)
       return
     }
     const data = await res.json()
     setRole(data.role)
     setLessons(data.lessons ?? [])
+    setLoading(false)
   }, [id])
 
   useEffect(() => {
@@ -47,21 +52,18 @@ export default function ClassroomDetailPage() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="p-3 sm:p-4 space-y-4">
+        <ClassroomTileSkeleton count={4} />
+        <ClassroomLoading label="Đang tải buổi học..." className="py-8" />
+      </div>
+    )
+  }
+
   return (
     <div className="p-3 sm:p-4 space-y-4">
       {error && <p className="text-sm text-red-600">{error}</p>}
-
-      <div>
-        <Link
-          href={`/classroom/${id}/shared`}
-          className={`${TILE} bg-amber-50/60 border-amber-200/80`}
-        >
-          <FolderOpen className="h-9 w-9 text-amber-700" />
-          <p className="text-xs font-medium line-clamp-2 w-full leading-snug">
-            Tài liệu chung
-          </p>
-        </Link>
-      </div>
 
       <div className="flex flex-wrap gap-3">
         {role === 'teacher' && (
@@ -72,7 +74,7 @@ export default function ClassroomDetailPage() {
             className={`${TILE} border-dashed text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer`}
           >
             <Plus className="h-8 w-8" />
-            <p className="text-xs font-medium">Thêm buổi</p>
+            <p className="text-xs font-medium">{busy ? 'Đang tạo...' : 'Thêm buổi'}</p>
           </button>
         )}
         {lessons.map((l) => (

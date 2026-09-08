@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { FileDropzone } from '@/components/documents/file-dropzone'
@@ -10,6 +11,12 @@ import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import { cn } from '@/lib/utils'
 import { MAX_DOCUMENT_DESCRIPTION_LENGTH } from '@/lib/upload/file-types'
 import type { Document, Tag } from '@/lib/db/types'
+
+function splitFilename(filename: string): { base: string; ext: string } {
+  const i = filename.lastIndexOf('.')
+  if (i <= 0) return { base: filename, ext: '' }
+  return { base: filename.slice(0, i), ext: filename.slice(i) }
+}
 
 type UploadTab = 'file' | 'meta'
 
@@ -68,9 +75,9 @@ export function UploadModal({
 
   if (!open) return null
 
-  const nameBase = filename.includes('.')
-    ? filename.slice(0, filename.lastIndexOf('.'))
-    : filename
+  const displayFilename = filename.trim() || (isReupload ? reuploadDoc?.filename ?? '' : '')
+  const { base: nameBase, ext: nameExt } = splitFilename(displayFilename)
+  const canRename = Boolean(selectedFile || (isReupload && displayFilename))
   const canSave = Boolean(selectedFile && nameBase.trim())
 
   const tabBtn = (id: UploadTab, label: string) => (
@@ -104,14 +111,31 @@ export function UploadModal({
         aria-label={isReupload ? 'Thay thế file' : 'Tải tài liệu lên'}
       >
         <div className="shrink-0 flex items-center gap-2 px-4 py-3 border-b">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold truncate">
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <h2 className="text-base font-semibold shrink-0">
               {isReupload ? 'Thay thế file' : 'Tải tài liệu lên'}
             </h2>
-            {isReupload && (
-              <p className="text-xs text-muted-foreground truncate mt-0.5">
-                {reuploadDoc?.filename}
-              </p>
+            {canRename && (
+              <>
+                <span className="text-muted-foreground shrink-0" aria-hidden>
+                  ·
+                </span>
+                <div className="flex items-center gap-1 min-w-0 flex-1">
+                  <Input
+                    value={nameBase}
+                    onChange={(e) => onFilenameChange(`${e.target.value}${nameExt}`)}
+                    disabled={uploading}
+                    placeholder="Tên file"
+                    aria-label="Tên file"
+                    className="h-8 text-sm font-medium min-w-0"
+                  />
+                  {nameExt ? (
+                    <span className="text-sm text-muted-foreground shrink-0 tabular-nums">
+                      {nameExt}
+                    </span>
+                  ) : null}
+                </div>
+              </>
             )}
           </div>
           <Button
@@ -145,9 +169,7 @@ export function UploadModal({
               <FileDropzone
                 disabled={uploading}
                 selectedFile={selectedFile}
-                filename={filename}
                 onFileSelect={onFileSelect}
-                onFilenameChange={onFilenameChange}
               />
             </div>
           )}

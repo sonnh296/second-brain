@@ -531,14 +531,98 @@ export function getContentEditState(
 ) {
   const fileType = preview?.file_type ?? doc.file_type
   const isMediaType = isTranscribableType(fileType)
+  // Image OCR is edited in Chi tiết (OcrDetailsSection), not the Nội dung footer.
   const canEditText =
     !isMediaType &&
+    !isImageType(fileType) &&
     (doc.file_type === 'note' ||
-      ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
-        Boolean(preview?.content)))
+      (preview?.preview_type === 'text' && Boolean(preview?.content)))
   const originalContent = preview?.content ?? ''
   const hasContentChanges = editContent.trim() !== originalContent.trim()
   return { canEditText, hasContentChanges }
+}
+
+export function OcrDetailsSection({
+  doc,
+  preview,
+  editContent,
+  savingContent,
+  onEditContent,
+  onSaveContent,
+  readOnly = false,
+}: {
+  doc: Document
+  preview: PreviewData | null
+  editContent: string
+  savingContent: boolean
+  onEditContent: (v: string) => void
+  onSaveContent: () => void | Promise<void | boolean>
+  readOnly?: boolean
+}) {
+  const [showOcr, setShowOcr] = useState(false)
+  const fileType = preview?.file_type ?? doc.file_type
+  const ocrText = preview?.content?.trim() || editContent.trim()
+  const hasOcr = isImageType(fileType) && Boolean(ocrText)
+  const canEditOcr =
+    !readOnly &&
+    isImageType(fileType) &&
+    (preview?.preview_type === 'image_with_text' || Boolean(preview?.content)) &&
+    Boolean(preview?.content)
+  const originalContent = preview?.content ?? ''
+  const hasContentChanges = editContent.trim() !== originalContent.trim()
+
+  useEffect(() => {
+    setShowOcr(false)
+  }, [doc.id])
+
+  if (!hasOcr) return null
+
+  return (
+    <div className="space-y-2 pt-2 border-t">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={() => setShowOcr((v) => !v)}
+        aria-expanded={showOcr}
+      >
+        {showOcr ? 'Ẩn nội dung OCR' : 'Hiển thị nội dung OCR'}
+      </Button>
+      {showOcr && (
+        <div className="space-y-2">
+          {canEditOcr ? (
+            <>
+              <RichTextEditor
+                value={editContent}
+                onChange={onEditContent}
+                minHeightClass="min-h-[160px]"
+                className="max-h-[min(40vh,320px)]"
+                placeholder="Chỉnh sửa nội dung OCR..."
+              />
+              <Button
+                size="sm"
+                variant={hasContentChanges ? 'default' : 'secondary'}
+                onClick={() => void onSaveContent()}
+                disabled={savingContent || !hasContentChanges}
+                className={cn(
+                  'w-full',
+                  !hasContentChanges &&
+                    'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
+                )}
+              >
+                {savingContent ? 'Đang lưu...' : 'Lưu nội dung OCR'}
+              </Button>
+            </>
+          ) : (
+            <div className="max-h-[min(40vh,320px)] overflow-y-auto overscroll-contain rounded border bg-background p-3">
+              <MarkdownContent content={preview?.content ?? editContent} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ContentPreviewFooter({
@@ -550,6 +634,7 @@ export function ContentPreviewFooter({
   viewerUrl,
   canInline,
   canOpenDownload,
+  readOnly = false,
 }: {
   doc: Document
   preview: PreviewData | null
@@ -559,15 +644,17 @@ export function ContentPreviewFooter({
   viewerUrl: string
   canInline: boolean
   canOpenDownload: boolean
+  readOnly?: boolean
 }) {
   const { canEditText, hasContentChanges } = getContentEditState(doc, preview, editContent)
+  const showEdit = canEditText && !readOnly
   const showDownload = doc.file_type !== 'note' && canOpenDownload
 
-  if (!canEditText && !showDownload) return null
+  if (!showEdit && !showDownload) return null
 
   return (
     <div className="shrink-0 flex gap-2 p-3 border-t bg-background">
-      {canEditText && (
+      {showEdit && (
         <Button
           size="default"
           variant={hasContentChanges ? 'default' : 'secondary'}
@@ -615,6 +702,7 @@ export function ContentPreview({
   onEditContent,
   pdfStartPage,
   layout = 'panel',
+  readOnly = false,
 }: {
   doc: Document
   preview: PreviewData | null
@@ -624,6 +712,7 @@ export function ContentPreview({
   onEditContent: (v: string) => void
   pdfStartPage?: number
   layout?: 'panel' | 'page'
+  readOnly?: boolean
 }) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null)
   const [assetLoading, setAssetLoading] = useState(true)
@@ -640,10 +729,11 @@ export function ContentPreview({
       : baseViewerUrl
   const isMedia = isTranscribableType(fileType)
   const canEditText =
+    !readOnly &&
     !isMedia &&
+    !isImageType(fileType) &&
     (doc.file_type === 'note' ||
-      ((preview?.preview_type === 'text' || preview?.preview_type === 'image_with_text') &&
-        Boolean(preview?.content)))
+      (preview?.preview_type === 'text' && Boolean(preview?.content)))
   const noteImageScope =
     doc.file_type === 'note' ? ({ kind: 'n' as const, id: doc.id }) : undefined
 
@@ -714,7 +804,7 @@ export function ContentPreview({
             loading={assetLoading}
             loadingLabel="Đang tải ảnh..."
             className={cn(
-              'shrink-0',
+              'flex-1',
               layout === 'page' ? 'min-h-[min(35vh,280px)]' : 'min-h-[min(28vh,220px)]'
             )}
           >
@@ -725,25 +815,10 @@ export function ContentPreview({
               onLoad={() => setAssetLoading(false)}
               onError={() => setAssetLoading(false)}
               maxHeightClass={
-                layout === 'page' ? 'max-h-[min(40vh,360px)]' : 'max-h-[min(32vh,280px)]'
+                layout === 'page' ? 'max-h-[min(70vh,640px)]' : 'max-h-[min(55vh,480px)]'
               }
             />
           </AssetPreviewFrame>
-          {preview?.content &&
-            (canEditText ? (
-              <RichTextEditor
-                value={editContent}
-                onChange={onEditContent}
-                minHeightClass="min-h-0"
-                className="flex-1"
-                placeholder="Chỉnh sửa nội dung..."
-                imageScope={noteImageScope}
-              />
-            ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain rounded border bg-background p-3">
-                <MarkdownContent content={preview.content} />
-              </div>
-            ))}
           {preview?.message && (
             <p className="shrink-0 text-xs text-muted-foreground">{preview.message}</p>
           )}
@@ -1255,6 +1330,15 @@ export function DocumentPreviewPanel({
               <p>Ngày tạo: {new Date(doc.created_at).toLocaleDateString('vi-VN')}</p>
               <StatusBadge status={doc.status} />
             </div>
+
+            <OcrDetailsSection
+              doc={doc}
+              preview={preview}
+              editContent={editContent}
+              savingContent={savingContent}
+              onEditContent={onEditContent}
+              onSaveContent={onSaveContent}
+            />
 
             <div className="flex flex-col gap-2 pt-2">
               {onReupload && (

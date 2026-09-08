@@ -13,8 +13,8 @@ export default async function HomePage() {
   if (!user) redirect('/login')
 
   return (
-    <div className="min-h-screen flex flex-col bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-50 via-background to-amber-50/40">
-      <header className="shrink-0 border-b bg-background/80 backdrop-blur px-4 sm:px-6 py-3 flex items-center justify-between">
+    <div className="h-screen flex flex-col overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sky-50 via-background to-amber-50/40">
+      <header className="relative z-20 shrink-0 border-b bg-background/80 backdrop-blur px-4 sm:px-6 py-3 flex items-center justify-between">
         <Link href="/home" className="flex items-center gap-2">
           <Image
             src="/logo.png"
@@ -28,7 +28,7 @@ export default async function HomePage() {
         <HeaderActions />
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-12">
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-12 overflow-hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 w-full max-w-xl place-items-center">
           <Link
             href="/documents"

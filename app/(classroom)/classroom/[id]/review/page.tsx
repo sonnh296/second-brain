@@ -4,6 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { BookOpen, Plus, Upload } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { ClassroomModal } from '@/components/classroom/classroom-modal'
 import { putToR2WithProgress } from '@/lib/upload/put-with-progress'
 
 type ReviewSet = {
@@ -43,14 +47,21 @@ export default function ReviewHubPage() {
   async function createSet() {
     if (!title.trim() || busy) return
     setBusy(true)
+    setMsg(null)
     const res = await fetch(`/api/classroom/${id}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: title.trim(), set_type: 'flashcard' }),
     })
     setBusy(false)
-    if (!res.ok) return
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setMsg(d.error ?? 'Không tạo được')
+      return
+    }
     const set = await res.json()
+    setShowCreate(false)
+    setTitle('')
     router.push(`/classroom/${id}/review/${set.id}`)
   }
 
@@ -84,33 +95,6 @@ export default function ReviewHubPage() {
 
   return (
     <div className="p-3 sm:p-4 space-y-4">
-      {showCreate && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3 max-w-lg">
-          <input
-            className="flex-1 min-w-[140px] rounded-md border px-3 py-2 text-sm"
-            placeholder="Tên bộ ôn"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void createSet()}
-            autoFocus
-          />
-          <button
-            type="button"
-            disabled={busy || !title.trim()}
-            onClick={() => void createSet()}
-            className="rounded-md bg-foreground text-background px-3 py-2 text-sm font-medium disabled:opacity-50"
-          >
-            Tạo
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowCreate(false)}
-            className="text-sm text-muted-foreground px-2"
-          >
-            Hủy
-          </button>
-        </div>
-      )}
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
       <div className="flex flex-wrap gap-3 relative">
@@ -142,6 +126,8 @@ export default function ReviewHubPage() {
                     className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
                     onClick={() => {
                       setShowAddMenu(false)
+                      setTitle('')
+                      setMsg(null)
                       setShowCreate(true)
                     }}
                   >
@@ -171,8 +157,51 @@ export default function ReviewHubPage() {
       </div>
 
       {sets.length === 0 && !showCreate && (
-        <p className="text-sm text-muted-foreground">Chưa có bộ ôn tập</p>
+        <p className="text-sm text-muted-foreground">Chưa có bộ ôn thi</p>
       )}
+
+      <ClassroomModal
+        open={showCreate}
+        title="Tạo bộ ôn thi"
+        onClose={() => {
+          if (!busy) setShowCreate(false)
+        }}
+        busy={busy}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowCreate(false)}
+              disabled={busy}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={busy || !title.trim()}
+              onClick={() => void createSet()}
+            >
+              {busy ? 'Đang tạo...' : 'Tạo'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="exam-set-title">Tên bộ ôn</Label>
+          <Input
+            id="exam-set-title"
+            placeholder="Ví dụ: Ôn giữa kỳ"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void createSet()}
+            autoFocus
+            disabled={busy}
+          />
+        </div>
+      </ClassroomModal>
     </div>
   )
 }
