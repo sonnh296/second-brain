@@ -65,7 +65,7 @@ export function ClassroomModal({
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="p-4 space-y-3">{children}</div>
+        <div className="p-4 space-y-3 overflow-y-auto max-h-[min(70vh,560px)]">{children}</div>
         {footer ? <div className="shrink-0 border-t p-3">{footer}</div> : null}
       </div>
     </div>

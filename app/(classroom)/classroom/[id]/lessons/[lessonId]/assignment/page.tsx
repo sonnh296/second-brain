@@ -2,36 +2,38 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { useParams } from 'next/navigation'
+import { ClipboardList } from 'lucide-react'
 import { ClassroomLoading } from '@/components/classroom/classroom-loading'
-import { ClassroomModal } from '@/components/classroom/classroom-modal'
+import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
+
+type AssignmentRow = {
+  id: string
+  title: string
+  description: string | null
+  created_at: string
+  my_submission?: { status: string } | null
+}
+
+const TILE =
+  'rounded-xl border bg-card p-3 flex flex-col items-center text-center gap-2 hover:shadow-md hover:border-primary/30 transition min-h-[8rem]'
 
 export default function LessonAssignmentPage() {
   const { id, lessonId } = useParams<{ id: string; lessonId: string }>()
-  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [role, setRole] = useState<'teacher' | 'student'>('student')
+  const [className, setClassName] = useState('')
   const [lessonTitle, setLessonTitle] = useState('')
-  const [assignment, setAssignment] = useState<{
-    id: string
-    title: string
-    description: string | null
-  } | null>(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [assignments, setAssignments] = useState<AssignmentRow[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const res = await fetch(`/api/classroom/${id}/lessons/${lessonId}`)
+    const [res, classRes] = await Promise.all([
+      fetch(`/api/classroom/${id}/lessons/${lessonId}`),
+      fetch(`/api/classroom/${id}`),
+    ])
     if (!res.ok) {
       setError('Không tải được buổi học')
       setLoading(false)
@@ -40,136 +42,110 @@ export default function LessonAssignmentPage() {
     const data = await res.json()
     setRole(data.role)
     setLessonTitle(data.lesson?.title ?? '')
-    setAssignment(data.assignment ?? null)
-    setLoading(false)
+    const list = (data.assignments ?? []) as AssignmentRow[]
 
-    if (data.assignment?.id) {
-      router.replace(`/classroom/${id}/assignments/${data.assignment.id}`)
+    if (data.role === 'student' && list.length > 0) {
+      const allRes = await fetch(`/api/classroom/${id}/assignments`)
+      if (allRes.ok) {
+        const all = await allRes.json()
+        const byId = new Map(
+          (all.assignments ?? []).map(
+            (a: AssignmentRow & { my_submission?: { status: string } }) => [
+              a.id,
+              a.my_submission ?? null,
+            ]
+          )
+        )
+        setAssignments(
+          list.map((a) => ({
+            ...a,
+            my_submission: (byId.get(a.id) as { status: string } | null) ?? null,
+          }))
+        )
+      } else {
+        setAssignments(list)
+      }
+    } else {
+      setAssignments(list)
     }
-  }, [id, lessonId, router])
+
+    if (classRes.ok) {
+      const c = await classRes.json()
+      setClassName(c.classroom?.name ?? '')
+    }
+    setLoading(false)
+  }, [id, lessonId])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  async function createAssignment() {
-    if (busy || !title.trim()) return
-    setBusy(true)
-    setError(null)
-    const res = await fetch(`/api/classroom/${id}/assignments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lesson_id: lessonId,
-        title: title.trim(),
-        description: description.trim() || undefined,
-      }),
-    })
-    setBusy(false)
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}))
-      setError(d.error ?? 'Không tạo được bài tập')
-      return
-    }
-    const created = await res.json()
-    setCreateOpen(false)
-    router.push(`/classroom/${id}/assignments/${created.id}`)
-  }
-
   if (loading) {
     return <ClassroomLoading label="Đang mở bài tập..." />
   }
 
-  if (assignment) {
-    return <ClassroomLoading label="Đang chuyển tới bài tập..." />
-  }
-
   return (
-    <div className="p-3 sm:p-4 space-y-4 max-w-xl">
-      <div className="flex items-center gap-2">
-        <Link
-          href={`/classroom/${id}/lessons/${lessonId}`}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {lessonTitle || 'Buổi học'}
-        </Link>
-      </div>
+    <div className="p-3 sm:p-4 space-y-4">
+      <ClassroomBreadcrumb
+        items={[
+          { label: 'Lớp học', href: '/classroom' },
+          { label: className || 'Lớp', href: `/classroom/${id}` },
+          { label: lessonTitle || 'Buổi học', href: `/classroom/${id}/lessons/${lessonId}` },
+          { label: 'Bài tập' },
+        ]}
+      />
 
-      <h2 className="text-base font-semibold">Bài tập</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-semibold">Bài tập</h2>
+        {role === 'teacher' && (
+          <Link
+            href={`/classroom/${id}/lessons/${lessonId}/assignment/new`}
+            className="ml-auto inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
+          >
+            Thêm bài tập
+          </Link>
+        )}
+      </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {role === 'teacher' ? (
-        <div className="rounded-xl border p-4 space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Buổi này chưa có bài tập. Tạo đề bài để học sinh nộp bài.
-          </p>
-          <Button type="button" onClick={() => setCreateOpen(true)}>
-            Tạo bài tập
-          </Button>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground py-8 text-center">
-          Giáo viên chưa đăng bài tập cho buổi này.
-        </p>
-      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {assignments.map((a) => (
+          <Link key={a.id} href={`/classroom/${id}/assignments/${a.id}`} className={TILE}>
+            <ClipboardList className="h-9 w-9 text-foreground/70" />
+            <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{a.title}</p>
+            {role === 'student' && (
+              <p className="text-[10px] text-muted-foreground">
+                {!a.my_submission
+                  ? 'Chưa nộp'
+                  : a.my_submission.status === 'graded'
+                    ? 'Đã chấm'
+                    : a.my_submission.status === 'submitted'
+                      ? 'Đã nộp'
+                      : 'Nháp'}
+              </p>
+            )}
+          </Link>
+        ))}
+      </div>
 
-      <ClassroomModal
-        open={createOpen}
-        title="Tạo bài tập"
-        onClose={() => {
-          if (!busy) setCreateOpen(false)
-        }}
-        busy={busy}
-        footer={
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => setCreateOpen(false)}
-              disabled={busy}
+      {assignments.length === 0 && (
+        <div className="rounded-xl border p-6 text-center space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {role === 'teacher'
+              ? 'Buổi này chưa có bài tập. Tạo bài đầu tiên.'
+              : 'Giáo viên chưa đăng bài tập cho buổi này.'}
+          </p>
+          {role === 'teacher' && (
+            <Link
+              href={`/classroom/${id}/lessons/${lessonId}/assignment/new`}
+              className="inline-flex h-8 items-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/80"
             >
-              Hủy
-            </Button>
-            <Button
-              type="button"
-              className="flex-1"
-              disabled={busy || !title.trim()}
-              onClick={() => void createAssignment()}
-            >
-              {busy ? 'Đang tạo...' : 'Tạo'}
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="assign-title">Tên bài tập</Label>
-            <Input
-              id="assign-title"
-              placeholder="Ví dụ: Bài tập buổi 1"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-              disabled={busy}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="assign-desc">Đề bài</Label>
-            <Textarea
-              id="assign-desc"
-              placeholder="Mô tả yêu cầu, hướng dẫn nộp bài..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={6}
-              disabled={busy}
-              className="resize-y"
-            />
-          </div>
+              Tạo bài tập
+            </Link>
+          )}
         </div>
-      </ClassroomModal>
+      )}
     </div>
   )
 }

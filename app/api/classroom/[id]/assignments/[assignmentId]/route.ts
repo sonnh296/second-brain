@@ -39,30 +39,61 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     .single()
   if (!assignment) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  if (membership.role === 'teacher') {
-    const { data: submissions } = await supabase
-      .from('assignment_submissions')
-      .select('*, grades(*)')
-      .eq('assignment_id', assignmentId)
-      .order('submitted_at', { ascending: false })
+  const { data: lesson } = await supabase
+    .from('classroom_lessons')
+    .select('id, title, lesson_index')
+    .eq('id', assignment.lesson_id)
+    .maybeSingle()
 
-    const studentIds = (submissions ?? []).map((s) => s.student_id)
+  if (membership.role === 'teacher') {
+    const { createServiceSupabaseClient } = await import('@/lib/db/server')
+    const admin = createServiceSupabaseClient()
+
+    const [{ data: submissions }, { data: members }] = await Promise.all([
+      supabase
+        .from('assignment_submissions')
+        .select('*, grades(*)')
+        .eq('assignment_id', assignmentId)
+        .order('submitted_at', { ascending: false }),
+      supabase
+        .from('classroom_members')
+        .select('user_id')
+        .eq('classroom_id', id)
+        .eq('role', 'student'),
+    ])
+
+    const studentIds = [...new Set((members ?? []).map((m) => m.user_id))]
     let profiles: { id: string; username: string }[] = []
     if (studentIds.length > 0) {
-      const { createServiceSupabaseClient } = await import('@/lib/db/server')
-      const admin = createServiceSupabaseClient()
       const { data } = await admin.from('profiles').select('id, username').in('id', studentIds)
       profiles = data ?? []
     }
     const names = new Map(profiles.map((p) => [p.id, p.username]))
+    const byStudent = new Map((submissions ?? []).map((s) => [s.student_id, s]))
+
+    const studentRows = studentIds.map((sid) => {
+      const sub = byStudent.get(sid)
+      return {
+        student_id: sid,
+        username: names.get(sid) ?? null,
+        submission: sub
+          ? {
+              ...sub,
+              username: names.get(sid) ?? null,
+            }
+          : null,
+      }
+    })
 
     return NextResponse.json({
       role: 'teacher',
       assignment,
+      lesson,
       submissions: (submissions ?? []).map((s) => ({
         ...s,
         username: names.get(s.student_id) ?? null,
       })),
+      students: studentRows,
     })
   }
 
@@ -73,7 +104,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     .eq('student_id', user.id)
     .maybeSingle()
 
-  return NextResponse.json({ role: 'student', assignment, submission })
+  return NextResponse.json({ role: 'student', assignment, lesson, submission })
 }
 
 /** Student: get presign URL to upload submission file */
@@ -154,7 +185,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   }
 
   let body: {
-    action?: 'submit' | 'grade'
+    action?: 'submit' | 'grade' | 'save_content' | 'submit_content' | 'update'
     files?: { file_id: string; r2_key: string; filename: string; file_type: string; size: number }[]
     submission_id?: string
     score?: number
@@ -162,11 +193,102 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     method?: 'manual' | 'ai'
     rubric_id?: string | null
     ai_suggestion?: unknown
+    content_md?: string
+    title?: string
+    description?: string
   }
   try {
     body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+  }
+
+  if (body.action === 'update') {
+    const teacher = await requireTeacher(supabase, id, user.id)
+    if (isAclError(teacher)) {
+      return NextResponse.json({ error: teacher.error }, { status: teacher.status })
+    }
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (typeof body.title === 'string' && body.title.trim()) {
+      patch.title = body.title.trim().slice(0, 200)
+    }
+    if (typeof body.description === 'string') {
+      patch.description = body.description
+    }
+    const { data, error } = await supabase
+      .from('assignments')
+      .update(patch)
+      .eq('id', assignmentId)
+      .eq('classroom_id', id)
+      .select('*')
+      .single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
+  if (body.action === 'save_content' || body.action === 'submit_content') {
+    if (membership.role !== 'student') {
+      return NextResponse.json({ error: 'Students only' }, { status: 403 })
+    }
+
+    const { data: assignment } = await supabase
+      .from('assignments')
+      .select('id, description')
+      .eq('id', assignmentId)
+      .eq('classroom_id', id)
+      .single()
+    if (!assignment) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const { data: existing } = await supabase
+      .from('assignment_submissions')
+      .select('id, status, files, content_md')
+      .eq('assignment_id', assignmentId)
+      .eq('student_id', user.id)
+      .maybeSingle()
+
+    // Allow revise even after graded — resubmit clears grade
+    const wasGraded = existing?.status === 'graded'
+
+    const contentMd =
+      typeof body.content_md === 'string' ? body.content_md : (existing?.content_md ?? '')
+
+    const isSubmit = body.action === 'submit_content'
+    let nextStatus: string
+    if (isSubmit) {
+      nextStatus = 'submitted'
+    } else if (existing?.status === 'graded') {
+      nextStatus = 'graded'
+    } else if (existing?.status === 'submitted') {
+      nextStatus = 'submitted'
+    } else {
+      nextStatus = 'draft'
+    }
+
+    const row: Record<string, unknown> = {
+      assignment_id: assignmentId,
+      student_id: user.id,
+      content_md: contentMd,
+      files: existing?.files ?? [],
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+    }
+    if (isSubmit || !existing) {
+      row.submitted_at = new Date().toISOString()
+    }
+
+    const { data, error } = await supabase
+      .from('assignment_submissions')
+      .upsert(row, { onConflict: 'assignment_id,student_id' })
+      .select('*')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    if (wasGraded && isSubmit && data?.id) {
+      await supabase.from('grades').delete().eq('submission_id', data.id)
+    }
+
+    return NextResponse.json(data)
   }
 
   if (body.action === 'submit') {
@@ -184,16 +306,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     const { data: existing } = await supabase
       .from('assignment_submissions')
-      .select('id, status')
+      .select('id, status, content_md')
       .eq('assignment_id', assignmentId)
       .eq('student_id', user.id)
       .maybeSingle()
-    if (existing?.status === 'graded') {
-      return NextResponse.json(
-        { error: 'Bài đã được chấm — không thể nộp lại' },
-        { status: 409 }
-      )
-    }
+
+    const wasGraded = existing?.status === 'graded'
+    // Allow revise after grade (clears grade below)
 
     const files = body.files ?? []
     if (files.length === 0) {
@@ -230,6 +349,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
           assignment_id: assignmentId,
           student_id: user.id,
           files: normalized,
+          content_md: existing?.content_md ?? '',
           status: 'submitted',
           submitted_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -240,6 +360,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    if (wasGraded && data?.id) {
+      await supabase.from('grades').delete().eq('submission_id', data.id)
+    }
+
     return NextResponse.json(data)
   }
 
@@ -255,20 +380,6 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const score = Number(body.score)
     if (!Number.isFinite(score)) {
       return NextResponse.json({ error: 'Invalid score' }, { status: 400 })
-    }
-
-    const { data: assignmentMeta } = await supabase
-      .from('assignments')
-      .select('max_score')
-      .eq('id', assignmentId)
-      .eq('classroom_id', id)
-      .single()
-    const maxScore = Number(assignmentMeta?.max_score ?? 10)
-    if (score < 0 || score > maxScore) {
-      return NextResponse.json(
-        { error: `Score must be between 0 and ${maxScore}` },
-        { status: 400 }
-      )
     }
 
     const { data: sub } = await supabase

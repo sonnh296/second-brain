@@ -3,54 +3,60 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ClipboardList, FileIcon as FileLucide, HelpCircle, Loader2, Plus } from 'lucide-react'
-import { ClassroomLoading, ClassroomTileSkeleton } from '@/components/classroom/classroom-loading'
+import { ClipboardList, HelpCircle, Plus } from 'lucide-react'
+import { ClassroomLoading } from '@/components/classroom/classroom-loading'
 import { ClassroomUploadModal } from '@/components/classroom/classroom-upload-modal'
 import {
   ClassroomDocumentPreview,
   type ClassroomDocRow,
 } from '@/components/classroom/classroom-document-preview'
+import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
+import { ClassroomDocGridItem } from '@/components/classroom/classroom-doc-grid'
 
 type Doc = ClassroomDocRow & {
   file_type?: string
 }
 
-const TILE =
-  'w-[7.25rem] sm:w-[7.5rem] flex flex-col items-center text-center gap-1.5 rounded-lg border p-2.5 hover:bg-muted/50 transition'
+const ACTION_TILE =
+  'flex-1 min-w-[7rem] max-w-[10rem] rounded-lg border bg-background/80 px-3 py-2.5 flex items-center gap-2.5 hover:border-primary/40 hover:bg-background transition'
 
-function statusLabel(status: string) {
-  if (status === 'pending' || status === 'processing') return 'Đang xử lý...'
-  if (status === 'failed') return 'Lỗi'
-  if (status === 'done') return 'Xong'
-  return status
-}
+const DOC_TILE_ADD =
+  'rounded-lg border border-dashed bg-card p-2.5 flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition cursor-pointer disabled:opacity-50 min-h-[7.5rem]'
 
 export default function LessonDetailPage() {
   const { id, lessonId } = useParams<{ id: string; lessonId: string }>()
   const [loading, setLoading] = useState(true)
   const [title, setTitle] = useState('')
+  const [className, setClassName] = useState('')
   const [role, setRole] = useState<'teacher' | 'student' | null>(null)
   const [folderId, setFolderId] = useState<string | null>(null)
   const [docs, setDocs] = useState<Doc[]>([])
-  const [hasAssignment, setHasAssignment] = useState(false)
+  const [assignmentCount, setAssignmentCount] = useState(0)
   const [msg, setMsg] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<ClassroomDocRow | null>(null)
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
-    const res = await fetch(`/api/classroom/${id}/lessons/${lessonId}`)
-    if (!res.ok) {
+    const [lessonRes, classRes] = await Promise.all([
+      fetch(`/api/classroom/${id}/lessons/${lessonId}`),
+      fetch(`/api/classroom/${id}`),
+    ])
+    if (!lessonRes.ok) {
       setMsg('Không tải được buổi học')
       setLoading(false)
       return
     }
-    const data = await res.json()
+    const data = await lessonRes.json()
     setTitle(data.lesson.title)
     setRole(data.role)
     setFolderId(data.folder?.id ?? null)
     setDocs(data.documents ?? [])
-    setHasAssignment(Boolean(data.assignment))
+    setAssignmentCount((data.assignments ?? []).length)
+    if (classRes.ok) {
+      const c = await classRes.json()
+      setClassName(c.classroom?.name ?? '')
+    }
     setLoading(false)
   }, [id, lessonId])
 
@@ -67,11 +73,20 @@ export default function LessonDetailPage() {
     return () => window.clearInterval(t)
   }, [docs, load])
 
+  async function deleteDoc(docId: string) {
+    if (!confirm('Xóa tài liệu này?')) return
+    const res = await fetch(`/api/classroom/${id}/documents/${docId}`, { method: 'DELETE' })
+    if (!res.ok) {
+      setMsg('Không xóa được tài liệu')
+      return
+    }
+    if (previewDoc?.id === docId) setPreviewDoc(null)
+    void load({ silent: true })
+  }
+
   if (loading) {
     return (
       <div className="p-3 sm:p-4 space-y-4">
-        <div className="h-6 w-40 rounded bg-muted/60 animate-pulse" />
-        <ClassroomTileSkeleton count={3} />
         <ClassroomLoading label="Đang tải buổi học..." className="py-8" />
       </div>
     )
@@ -79,87 +94,90 @@ export default function LessonDetailPage() {
 
   return (
     <div className="p-3 sm:p-4 space-y-4">
+      <ClassroomBreadcrumb
+        items={[
+          { label: 'Lớp học', href: '/classroom' },
+          { label: className || 'Lớp', href: `/classroom/${id}` },
+          { label: 'Buổi học', href: `/classroom/${id}` },
+          { label: title || 'Buổi' },
+        ]}
+      />
+
       <h2 className="text-base font-semibold">{title}</h2>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      <div className="flex flex-wrap gap-3">
+      {/* Actions row */}
+      <div className="rounded-xl bg-muted/50 border px-3 py-2.5 flex flex-wrap gap-2">
         <Link
           href={`/classroom/${id}/lessons/${lessonId}/assignment`}
-          className={TILE}
+          className={ACTION_TILE}
         >
-          <ClipboardList className="h-9 w-9 text-foreground/70" />
-          <p className="text-xs font-medium line-clamp-2 w-full leading-snug">Bài tập</p>
-          {!hasAssignment && (
+          <ClipboardList className="h-5 w-5 shrink-0 text-foreground/70" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">Bài tập</p>
             <p className="text-[10px] text-muted-foreground">
-              {role === 'teacher' ? 'Tạo đề' : 'Chưa có'}
+              {assignmentCount === 0
+                ? role === 'teacher'
+                  ? 'Tạo đề'
+                  : 'Chưa có'
+                : `${assignmentCount} bài`}
             </p>
-          )}
+          </div>
         </Link>
 
-        <Link
-          href={`/classroom/${id}/lessons/${lessonId}/quiz`}
-          className={TILE}
-        >
-          <HelpCircle className="h-9 w-9 text-foreground/70" />
-          <p className="text-xs font-medium line-clamp-2 w-full leading-snug">Ôn tập</p>
+        <Link href={`/classroom/${id}/lessons/${lessonId}/quiz`} className={ACTION_TILE}>
+          <HelpCircle className="h-5 w-5 shrink-0 text-foreground/70" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">Ôn tập</p>
+            <p className="text-[10px] text-muted-foreground">Flashcard / quiz</p>
+          </div>
         </Link>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        {role === 'teacher' && (
-          <button
-            type="button"
-            disabled={!folderId}
-            onClick={() => setUploadOpen(true)}
-            className={`${TILE} border-dashed text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50`}
-          >
-            <Plus className="h-8 w-8" />
-            <p className="text-xs font-medium">Thêm tài liệu</p>
-          </button>
-        )}
-
-        {docs.map((d) => {
-          const processing = d.status === 'pending' || d.status === 'processing'
-          return (
+      <div className="border-t pt-4 space-y-3">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Tài liệu
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+          {role === 'teacher' && (
             <button
-              key={d.id}
               type="button"
-              onClick={() =>
-                setPreviewDoc({
-                  id: d.id,
-                  filename: d.filename,
-                  file_type: d.file_type || 'bin',
-                  file_size_bytes: d.file_size_bytes ?? 0,
-                  status: d.status,
-                  chunk_count: d.chunk_count,
-                  error_message: d.error_message ?? null,
-                  created_at: d.created_at,
-                })
-              }
-              className={`${TILE} cursor-pointer`}
+              disabled={!folderId}
+              onClick={() => setUploadOpen(true)}
+              className={DOC_TILE_ADD}
             >
-              {processing ? (
-                <Loader2 className="h-9 w-9 text-primary/70 animate-spin" />
-              ) : (
-                <FileLucide className="h-9 w-9 text-foreground/60" />
-              )}
-              <p className="text-xs font-medium line-clamp-2 w-full leading-snug">
-                {d.filename}
-              </p>
-              <p
-                className={`text-[10px] ${
-                  d.status === 'failed'
-                    ? 'text-red-600'
-                    : processing
-                      ? 'text-amber-700'
-                      : 'text-muted-foreground'
-                }`}
-              >
-                {statusLabel(d.status)}
-              </p>
+              <Plus className="h-6 w-6" />
+              <p className="text-[11px] font-medium">Thêm tài liệu</p>
             </button>
-          )
-        })}
+          )}
+
+          {docs.map((d) => {
+            const row: ClassroomDocRow = {
+              id: d.id,
+              filename: d.filename,
+              file_type: d.file_type || 'bin',
+              file_size_bytes: d.file_size_bytes ?? 0,
+              status: d.status,
+              chunk_count: d.chunk_count,
+              error_message: d.error_message ?? null,
+              created_at: d.created_at,
+            }
+            return (
+              <ClassroomDocGridItem
+                key={d.id}
+                classroomId={id}
+                doc={row}
+                onOpen={() => setPreviewDoc(row)}
+                canDelete={role === 'teacher'}
+                onDelete={() => void deleteDoc(d.id)}
+              />
+            )
+          })}
+        </div>
+
+        {docs.length === 0 && role === 'student' && (
+          <p className="text-sm text-muted-foreground">Chưa có tài liệu</p>
+        )}
       </div>
 
       {folderId && (

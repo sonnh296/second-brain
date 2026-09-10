@@ -64,6 +64,9 @@ export function ClassroomWorkspace({
   const onShared = pathname.startsWith(`${base}/shared`)
   const onExam = pathname.startsWith(`${base}/review`)
   const onChat = pathname.startsWith(`${base}/chat`)
+  const onAssignmentDetail =
+    /\/assignments\/[^/]+$/.test(pathname) && !pathname.endsWith('/assignments')
+  const fillHeight = onChat || onAssignmentDetail
 
   const sidebar = (
     <nav className="flex flex-col gap-0.5 p-2 h-full">
@@ -186,7 +189,7 @@ export function ClassroomWorkspace({
           {sidebar}
         </aside>
         <div
-          className={`flex-1 min-w-0 ${onChat ? 'overflow-hidden' : 'overflow-y-auto'}`}
+          className={`flex-1 min-w-0 ${fillHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
         >
           {children}
         </div>

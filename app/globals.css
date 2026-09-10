@@ -129,6 +129,11 @@
   }
 }
 
+/* Student-typed spans inside assignment work editor */
+.student-typed-text {
+  color: #dc2626;
+}
+
 /* TipTap / Keep-style editor */
 .tiptap p.is-editor-empty:first-child::before {
   color: var(--muted-foreground);

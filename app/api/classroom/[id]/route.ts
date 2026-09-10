@@ -59,10 +59,48 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
   const usernameById = new Map(profiles.map((p) => [p.id, p.username]))
 
+  let lessonsOut = lessons ?? []
+
+  // For students: count incomplete assignments per lesson (no submit / draft only)
+  if (membership.role === 'student' && lessonsOut.length > 0) {
+    const lessonIds = lessonsOut.map((l) => l.id)
+    const { data: assigns } = await supabase
+      .from('assignments')
+      .select('id, lesson_id')
+      .eq('classroom_id', id)
+      .in('lesson_id', lessonIds)
+
+    const assignList = assigns ?? []
+    const assignIds = assignList.map((a) => a.id)
+    const { data: subs } =
+      assignIds.length > 0
+        ? await supabase
+            .from('assignment_submissions')
+            .select('assignment_id, status')
+            .eq('student_id', user.id)
+            .in('assignment_id', assignIds)
+        : { data: [] as { assignment_id: string; status: string }[] }
+
+    const subByAssign = new Map((subs ?? []).map((s) => [s.assignment_id, s.status]))
+    const incompleteByLesson = new Map<string, number>()
+    for (const a of assignList) {
+      const st = subByAssign.get(a.id)
+      const done = st === 'submitted' || st === 'graded'
+      if (!done) {
+        incompleteByLesson.set(a.lesson_id, (incompleteByLesson.get(a.lesson_id) ?? 0) + 1)
+      }
+    }
+
+    lessonsOut = lessonsOut.map((l) => ({
+      ...l,
+      incomplete_assignments: incompleteByLesson.get(l.id) ?? 0,
+    }))
+  }
+
   return NextResponse.json({
     classroom,
     role: membership.role,
-    lessons: lessons ?? [],
+    lessons: lessonsOut,
     shared_folder: sharedFolder,
     members: (members ?? []).map((m) => ({
       user_id: m.user_id,

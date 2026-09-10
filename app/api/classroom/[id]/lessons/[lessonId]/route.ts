@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  const [{ data: folder }, { data: assignment }] = await Promise.all([
+  const [{ data: folder }, { data: assignments }] = await Promise.all([
     supabase
       .from('classroom_folders')
       .select('id, name, kind')
@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       .from('assignments')
       .select('id, title, description, due_at, max_file_bytes, max_score, created_at')
       .eq('lesson_id', lessonId)
-      .maybeSingle(),
+      .order('created_at', { ascending: true }),
   ])
 
   let documents: unknown[] = []
@@ -63,7 +63,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     role: membership.role,
     folder,
     documents,
-    assignment,
+    assignments: assignments ?? [],
+    assignment: assignments?.[0] ?? null,
   })
 }
 

@@ -2,30 +2,25 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { FileIcon as FileLucide, Loader2, Plus } from 'lucide-react'
 import { ClassroomUploadModal } from '@/components/classroom/classroom-upload-modal'
-import { ClassroomLoading, ClassroomTileSkeleton } from '@/components/classroom/classroom-loading'
+import { ClassroomLoading } from '@/components/classroom/classroom-loading'
 import {
   ClassroomDocumentPreview,
   type ClassroomDocRow,
 } from '@/components/classroom/classroom-document-preview'
+import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
+import {
+  ClassroomAddDocTile,
+  ClassroomDocGridItem,
+} from '@/components/classroom/classroom-doc-grid'
 
 type Doc = ClassroomDocRow
-
-const TILE =
-  'w-[7.25rem] sm:w-[7.5rem] flex flex-col items-center text-center gap-1.5 rounded-lg border p-2.5 hover:bg-muted/50 transition'
-
-function statusLabel(status: string) {
-  if (status === 'pending' || status === 'processing') return 'Đang xử lý...'
-  if (status === 'failed') return 'Lỗi'
-  if (status === 'done') return 'Xong'
-  return status
-}
 
 export default function SharedMaterialsPage() {
   const { id } = useParams<{ id: string }>()
   const [loading, setLoading] = useState(true)
   const [role, setRole] = useState<'teacher' | 'student'>('student')
+  const [className, setClassName] = useState('')
   const [folderId, setFolderId] = useState<string | null>(null)
   const [docs, setDocs] = useState<Doc[]>([])
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -41,6 +36,7 @@ export default function SharedMaterialsPage() {
     }
     const data = await meta.json()
     setRole(data.role)
+    setClassName(data.classroom?.name ?? '')
     const fid = data.shared_folder?.id as string | undefined
     if (!fid) {
       setLoading(false)
@@ -68,10 +64,20 @@ export default function SharedMaterialsPage() {
     return () => window.clearInterval(t)
   }, [docs, load])
 
+  async function deleteDoc(docId: string) {
+    if (!confirm('Xóa tài liệu này?')) return
+    const res = await fetch(`/api/classroom/${id}/documents/${docId}`, { method: 'DELETE' })
+    if (!res.ok) {
+      setMsg('Không xóa được tài liệu')
+      return
+    }
+    if (previewDoc?.id === docId) setPreviewDoc(null)
+    void load({ silent: true })
+  }
+
   if (loading) {
     return (
       <div className="p-3 sm:p-4 space-y-4">
-        <ClassroomTileSkeleton count={3} />
         <ClassroomLoading label="Đang tải tài liệu chung..." className="py-8" />
       </div>
     )
@@ -79,55 +85,37 @@ export default function SharedMaterialsPage() {
 
   return (
     <div className="p-3 sm:p-4 space-y-4">
+      <ClassroomBreadcrumb
+        items={[
+          { label: 'Lớp học', href: '/classroom' },
+          { label: className || 'Lớp', href: `/classroom/${id}` },
+          { label: 'Tài liệu chung' },
+        ]}
+      />
+
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {role === 'teacher' && (
-          <button
-            type="button"
+          <ClassroomAddDocTile
             disabled={!folderId}
             onClick={() => {
               setMsg(null)
               setUploadOpen(true)
             }}
-            className={`${TILE} border-dashed text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-50`}
-          >
-            <Plus className="h-8 w-8" />
-            <p className="text-xs font-medium">Thêm tài liệu</p>
-          </button>
+          />
         )}
 
-        {docs.map((d) => {
-          const processing = d.status === 'pending' || d.status === 'processing'
-          return (
-            <button
-              key={d.id}
-              type="button"
-              onClick={() => setPreviewDoc(d)}
-              className={`${TILE} cursor-pointer`}
-            >
-              {processing ? (
-                <Loader2 className="h-9 w-9 text-primary/70 animate-spin" />
-              ) : (
-                <FileLucide className="h-9 w-9 text-foreground/60" />
-              )}
-              <p className="text-xs font-medium line-clamp-2 w-full leading-snug">
-                {d.filename}
-              </p>
-              <p
-                className={`text-[10px] ${
-                  d.status === 'failed'
-                    ? 'text-red-600'
-                    : processing
-                      ? 'text-amber-700'
-                      : 'text-muted-foreground'
-                }`}
-              >
-                {statusLabel(d.status)}
-              </p>
-            </button>
-          )
-        })}
+        {docs.map((d) => (
+          <ClassroomDocGridItem
+            key={d.id}
+            classroomId={id}
+            doc={d}
+            onOpen={() => setPreviewDoc(d)}
+            canDelete={role === 'teacher'}
+            onDelete={() => void deleteDoc(d.id)}
+          />
+        ))}
       </div>
 
       {docs.length === 0 && role === 'student' && (

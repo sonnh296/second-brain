@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ClipboardList } from 'lucide-react'
+import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
 
 type AssignmentRow = {
   id: string
@@ -14,7 +15,7 @@ type AssignmentRow = {
 }
 
 const TILE =
-  'w-[7.25rem] sm:w-[7.5rem] flex flex-col items-center text-center gap-1.5 rounded-lg border p-2.5 hover:bg-muted/50 transition'
+  'rounded-xl border bg-card p-3 flex flex-col items-center text-center gap-2 hover:shadow-md hover:border-primary/30 transition min-h-[9.5rem]'
 
 export default function AssignmentsListPage() {
   return (
@@ -31,14 +32,22 @@ function AssignmentsListInner() {
   const searchParams = useSearchParams()
   const createForLesson = searchParams.get('create')
   const [role, setRole] = useState<'teacher' | 'student'>('student')
+  const [className, setClassName] = useState('')
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
 
   const load = useCallback(async () => {
-    const assignRes = await fetch(`/api/classroom/${id}/assignments`)
+    const [assignRes, classRes] = await Promise.all([
+      fetch(`/api/classroom/${id}/assignments`),
+      fetch(`/api/classroom/${id}`),
+    ])
     if (assignRes.ok) {
       const d = await assignRes.json()
       setRole(d.role)
       setAssignments(d.assignments ?? [])
+    }
+    if (classRes.ok) {
+      const c = await classRes.json()
+      setClassName(c.classroom?.name ?? '')
     }
   }, [id])
 
@@ -53,17 +62,23 @@ function AssignmentsListInner() {
       router.replace(`/classroom/${id}/assignments/${existing.id}`)
       return
     }
-    // Redirect teachers back to the lesson to create via popup.
     router.replace(`/classroom/${id}/lessons/${createForLesson}`)
   }, [createForLesson, assignments, id, router])
 
   return (
     <div className="p-3 sm:p-4 space-y-4">
+      <ClassroomBreadcrumb
+        items={[
+          { label: 'Lớp học', href: '/classroom' },
+          { label: className || 'Lớp', href: `/classroom/${id}` },
+          { label: 'Bài tập' },
+        ]}
+      />
       <p className="text-sm text-muted-foreground">
         Bài tập thuộc từng buổi học. Mở một buổi để xem hoặc tạo bài tập.
       </p>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {assignments.map((a) => {
           const lesson = a.classroom_lessons
           return (
@@ -72,7 +87,7 @@ function AssignmentsListInner() {
               href={`/classroom/${id}/assignments/${a.id}`}
               className={TILE}
             >
-              <ClipboardList className="h-9 w-9 text-foreground/70" />
+              <ClipboardList className="h-10 w-10 text-foreground/70" />
               <p className="text-xs font-medium line-clamp-2 w-full leading-snug">
                 {a.title}
               </p>

@@ -114,9 +114,6 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     .single()
 
   if (error) {
-    if (error.code === '23505') {
-      return NextResponse.json({ error: 'Buổi này đã có bài tập' }, { status: 409 })
-    }
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   return NextResponse.json(data, { status: 201 })
