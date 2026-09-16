@@ -34,10 +34,17 @@ export async function createClassroomWithDefaults(
 
 export async function createLesson(
   supabase: SupabaseClient,
-  classroomId: string
+  classroomId: string,
+  title?: string
 ): Promise<{ lesson: { id: string; lesson_index: number; title: string }; error?: string }> {
+  const trimmed = title?.trim()
+  if (title !== undefined && !trimmed) {
+    return { lesson: null as never, error: 'Tên buổi không hợp lệ' }
+  }
+
   const { data, error } = await supabase.rpc('create_classroom_lesson', {
     p_classroom_id: classroomId,
+    p_title: trimmed ? trimmed.slice(0, 200) : null,
   })
 
   if (error) {

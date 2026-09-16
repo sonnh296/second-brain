@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   return NextResponse.json({ lessons: data ?? [] })
 }
 
-export async function POST(_req: NextRequest, ctx: Ctx) {
+export async function POST(req: NextRequest, ctx: Ctx) {
   const { id } = await ctx.params
   const supabase = await createServerSupabaseClient()
   const {
@@ -44,9 +44,18 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: membership.error }, { status: membership.status })
   }
 
-  const result = await createLesson(supabase, id)
+  let title: string | undefined
+  try {
+    const body = await req.json()
+    if (typeof body?.title === 'string') title = body.title
+  } catch {
+    // empty body → default title from RPC
+  }
+
+  const result = await createLesson(supabase, id, title)
   if (result.error || !result.lesson) {
-    return NextResponse.json({ error: result.error ?? 'Failed' }, { status: 500 })
+    const status = result.error === 'Tên buổi không hợp lệ' ? 400 : 500
+    return NextResponse.json({ error: result.error ?? 'Failed' }, { status })
   }
   return NextResponse.json(result.lesson, { status: 201 })
 }
