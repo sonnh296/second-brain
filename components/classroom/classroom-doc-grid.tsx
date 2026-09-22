@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { MoreVertical, Plus } from 'lucide-react'
+import { Check, MoreVertical, Plus } from 'lucide-react'
 import { StatusBadge } from '@/components/documents/document-grid'
 import { FileIcon } from '@/components/documents/file-icon'
+import { useLongPressSelect } from '@/hooks/use-long-press-select'
 import { isImageType } from '@/lib/upload/file-types'
 import type { ClassroomDocRow } from '@/components/classroom/classroom-document-preview'
 import type { Document } from '@/lib/db/types'
@@ -67,29 +68,68 @@ export function ClassroomDocGridItem({
   onOpen,
   onDelete,
   canDelete,
+  selected = false,
+  selectionMode = false,
+  onSelect,
 }: {
   classroomId: string
   doc: ClassroomDocRow
   onOpen: () => void
   onDelete?: () => void
   canDelete?: boolean
+  selected?: boolean
+  selectionMode?: boolean
+  onSelect?: (docId: string) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const status = doc.status as Document['status']
 
+  const press = useLongPressSelect({
+    disabled: !onSelect,
+    onLongPress: () => onSelect?.(doc.id),
+    onTap: () => {
+      if (selectionMode) {
+        onSelect?.(doc.id)
+      } else {
+        onOpen()
+      }
+    },
+  })
+
   return (
     <div
-      className="group relative rounded-lg border bg-card p-2.5 cursor-pointer select-none transition-all hover:shadow-md hover:border-primary/30"
-      onClick={onOpen}
+      data-selectable
+      className={`group relative rounded-lg border bg-card p-2.5 cursor-pointer select-none transition-all hover:shadow-md hover:border-primary/30 ${
+        selected ? 'ring-2 ring-primary border-primary/50' : ''
+      }`}
+      onPointerDown={press.onPointerDown}
+      onPointerMove={press.onPointerMove}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onClick={press.onClick}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          onOpen()
+          if (selectionMode) onSelect?.(doc.id)
+          else onOpen()
         }
       }}
       role="button"
       tabIndex={0}
+      aria-pressed={selected}
     >
+      {(selectionMode || selected) && (
+        <div
+          className={`absolute top-2 left-2 z-10 h-5 w-5 rounded-full border flex items-center justify-center ${
+            selected
+              ? 'bg-primary border-primary text-primary-foreground'
+              : 'bg-background/90 border-muted-foreground/40'
+          }`}
+        >
+          {selected && <Check className="h-3 w-3" />}
+        </div>
+      )}
+
       <div className="flex flex-col items-center text-center gap-2">
         <ClassroomDocThumb
           classroomId={classroomId}
@@ -101,7 +141,7 @@ export function ClassroomDocGridItem({
         {status !== 'done' && <StatusBadge status={status} />}
       </div>
 
-      {canDelete && onDelete && (
+      {canDelete && onDelete && !selectionMode && (
         <>
           <button
             type="button"
@@ -118,6 +158,16 @@ export function ClassroomDocGridItem({
               className="absolute top-8 right-2 z-10 bg-popover border rounded-md shadow-md py-1 min-w-[100px]"
               onClick={(e) => e.stopPropagation()}
             >
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted cursor-pointer"
+                onClick={() => {
+                  setMenuOpen(false)
+                  onSelect?.(doc.id)
+                }}
+              >
+                Chọn
+              </button>
               <button
                 type="button"
                 className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer"

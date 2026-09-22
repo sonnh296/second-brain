@@ -5,8 +5,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Readable } from 'stream'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { isAclError, requireMember, requireTeacher } from '@/lib/classroom/acl'
-import { getObjectStream, deleteObject, headObject } from '@/lib/storage'
-import { deleteByClassroomDocument } from '@/lib/vector'
+import { getObjectStream, headObject } from '@/lib/storage'
+import { softDeleteClassroomDocument } from '@/lib/classroom/soft-delete'
+import { hardDeleteClassroomDocument } from '@/lib/classroom/hard-delete'
 import { isBrowserInlineType, mimeForType } from '@/lib/upload/file-types'
 
 type Ctx = { params: Promise<{ id: string; docId: string }> }
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   })
 }
 
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id, docId } = await ctx.params
   const supabase = await createServerSupabaseClient()
   const {
@@ -136,23 +137,19 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: membership.error }, { status: membership.status })
   }
 
-  const { data: doc } = await supabase
-    .from('classroom_documents')
-    .select('id, r2_key')
-    .eq('id', docId)
-    .eq('classroom_id', id)
-    .single()
+  const permanent = req.nextUrl.searchParams.get('permanent') === '1'
 
-  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (permanent) {
+    const result = await hardDeleteClassroomDocument(supabase, id, docId)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    return NextResponse.json({ ok: true, permanent: true })
+  }
 
-  await supabase
-    .from('classroom_documents')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', docId)
-
-  await deleteByClassroomDocument(id, docId).catch(() => {})
-  await deleteObject(doc.r2_key).catch(() => {})
-  await supabase.from('classroom_document_chunks').delete().eq('document_id', docId)
-
-  return NextResponse.json({ ok: true })
+  const result = await softDeleteClassroomDocument(supabase, id, docId)
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+  return NextResponse.json({ ok: true, trashed: true })
 }

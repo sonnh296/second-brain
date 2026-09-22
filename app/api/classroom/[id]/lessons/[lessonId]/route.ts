@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import { isAclError, requireMember, requireTeacher } from '@/lib/classroom/acl'
+import { softDeleteClassroomLesson } from '@/lib/classroom/soft-delete'
+import { hardDeleteClassroomLesson } from '@/lib/classroom/hard-delete'
 
 type Ctx = { params: Promise<{ id: string; lessonId: string }> }
 
@@ -22,9 +24,10 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
   const { data: lesson, error } = await supabase
     .from('classroom_lessons')
-    .select('id, lesson_index, title, created_at')
+    .select('id, lesson_index, title, created_at, deleted_at')
     .eq('id', lessonId)
     .eq('classroom_id', id)
+    .is('deleted_at', null)
     .single()
 
   if (error || !lesson) {
@@ -42,6 +45,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       .from('assignments')
       .select('id, title, description, due_at, max_file_bytes, max_score, created_at')
       .eq('lesson_id', lessonId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: true }),
   ])
 
@@ -96,6 +100,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     .update({ title: title.slice(0, 200), updated_at: new Date().toISOString() })
     .eq('id', lessonId)
     .eq('classroom_id', id)
+    .is('deleted_at', null)
     .select('id, lesson_index, title')
     .single()
 
@@ -103,7 +108,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   return NextResponse.json(data)
 }
 
-export async function DELETE(_req: NextRequest, ctx: Ctx) {
+export async function DELETE(req: NextRequest, ctx: Ctx) {
   const { id, lessonId } = await ctx.params
   const supabase = await createServerSupabaseClient()
   const {
@@ -116,12 +121,19 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: membership.error }, { status: membership.status })
   }
 
-  const { error } = await supabase
-    .from('classroom_lessons')
-    .delete()
-    .eq('id', lessonId)
-    .eq('classroom_id', id)
+  const permanent = req.nextUrl.searchParams.get('permanent') === '1'
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ ok: true })
+  if (permanent) {
+    const result = await hardDeleteClassroomLesson(supabase, id, lessonId)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    return NextResponse.json({ ok: true, permanent: true })
+  }
+
+  const result = await softDeleteClassroomLesson(supabase, id, lessonId)
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+  return NextResponse.json({ ok: true, trashed: true })
 }

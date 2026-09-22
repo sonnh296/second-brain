@@ -25,6 +25,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
     .from('classroom_lessons')
     .select('id, lesson_index, title, created_at')
     .eq('classroom_id', id)
+    .is('deleted_at', null)
     .order('lesson_index', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

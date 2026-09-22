@@ -53,6 +53,7 @@ export async function loadClassroomCatalog(
       .from('classroom_lessons')
       .select('id, lesson_index, title')
       .eq('classroom_id', classroomId)
+      .is('deleted_at', null)
       .order('lesson_index', { ascending: true }),
     supabase
       .from('classroom_folders')

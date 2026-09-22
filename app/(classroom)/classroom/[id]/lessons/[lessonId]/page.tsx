@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ClipboardList, HelpCircle, Plus } from 'lucide-react'
+import { ClipboardList, HelpCircle, Plus, Trash2, X } from 'lucide-react'
 import { ClassroomLoading } from '@/components/classroom/classroom-loading'
 import { ClassroomUploadModal } from '@/components/classroom/classroom-upload-modal'
 import {
@@ -12,6 +12,8 @@ import {
 } from '@/components/classroom/classroom-document-preview'
 import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
 import { ClassroomDocGridItem } from '@/components/classroom/classroom-doc-grid'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { Button } from '@/components/ui/button'
 
 type Doc = ClassroomDocRow & {
   file_type?: string
@@ -25,6 +27,7 @@ const DOC_TILE_ADD =
 
 export default function LessonDetailPage() {
   const { id, lessonId } = useParams<{ id: string; lessonId: string }>()
+  const { confirm, dialog: confirmDialog } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [title, setTitle] = useState('')
   const [className, setClassName] = useState('')
@@ -35,6 +38,9 @@ export default function LessonDetailPage() {
   const [msg, setMsg] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<ClassroomDocRow | null>(null)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
@@ -73,14 +79,36 @@ export default function LessonDetailPage() {
     return () => window.clearInterval(t)
   }, [docs, load])
 
-  async function deleteDoc(docId: string) {
-    if (!confirm('Xóa tài liệu này?')) return
-    const res = await fetch(`/api/classroom/${id}/documents/${docId}`, { method: 'DELETE' })
-    if (!res.ok) {
-      setMsg('Không xóa được tài liệu')
-      return
-    }
-    if (previewDoc?.id === docId) setPreviewDoc(null)
+  function toggleSelect(docId: string) {
+    setSelectionMode(true)
+    setSelectedIds((prev) =>
+      prev.includes(docId) ? prev.filter((x) => x !== docId) : [...prev, docId]
+    )
+  }
+
+  function clearSelection() {
+    setSelectedIds([])
+    setSelectionMode(false)
+  }
+
+  async function deleteDocs(ids: string[]) {
+    if (ids.length === 0) return
+    const ok = await confirm({
+      title: ids.length === 1 ? 'Xóa tài liệu này?' : `Xóa ${ids.length} tài liệu?`,
+      description: 'Tài liệu sẽ được chuyển vào thùng rác. Chat sẽ không tìm thấy nội dung này.',
+      confirmLabel: 'Xóa vào thùng rác',
+    })
+    if (!ok) return
+    setBusy(true)
+    setMsg(null)
+    await Promise.all(
+      ids.map((docId) =>
+        fetch(`/api/classroom/${id}/documents/${docId}`, { method: 'DELETE' })
+      )
+    )
+    setBusy(false)
+    if (previewDoc && ids.includes(previewDoc.id)) setPreviewDoc(null)
+    clearSelection()
     void load({ silent: true })
   }
 
@@ -106,7 +134,6 @@ export default function LessonDetailPage() {
       <h2 className="text-base font-semibold">{title}</h2>
       {msg && <p className="text-sm text-red-600">{msg}</p>}
 
-      {/* Actions row */}
       <div className="rounded-xl bg-muted/50 border px-3 py-2.5 flex flex-wrap gap-2">
         <Link
           href={`/classroom/${id}/lessons/${lessonId}/assignment`}
@@ -135,11 +162,72 @@ export default function LessonDetailPage() {
       </div>
 
       <div className="border-t pt-4 space-y-3">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Tài liệu
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
-          {role === 'teacher' && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Tài liệu
+          </p>
+          {role === 'teacher' && docs.length > 0 && !selectionMode && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelectionMode(true)}
+            >
+              Chọn
+            </Button>
+          )}
+        </div>
+
+        {selectionMode && role === 'teacher' && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+            <span className="text-xs font-medium">{selectedIds.length} đã chọn</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelectedIds(docs.map((d) => d.id))}
+              disabled={busy}
+            >
+              Chọn tất cả
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              disabled={busy || selectedIds.length === 0}
+              onClick={() => void deleteDocs(selectedIds)}
+            >
+              <Trash2 className="h-3 w-3" />
+              Xóa
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 ml-auto"
+              onClick={clearSelection}
+              aria-label="Bỏ chọn"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        )}
+
+        <div
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5"
+          onClick={(e) => {
+            if (
+              selectionMode &&
+              !(e.target as HTMLElement).closest('[data-selectable],button')
+            ) {
+              clearSelection()
+            }
+          }}
+        >
+          {role === 'teacher' && !selectionMode && (
             <button
               type="button"
               disabled={!folderId}
@@ -169,7 +257,10 @@ export default function LessonDetailPage() {
                 doc={row}
                 onOpen={() => setPreviewDoc(row)}
                 canDelete={role === 'teacher'}
-                onDelete={() => void deleteDoc(d.id)}
+                onDelete={() => void deleteDocs([d.id])}
+                selected={selectedIds.includes(d.id)}
+                selectionMode={selectionMode}
+                onSelect={role === 'teacher' ? toggleSelect : undefined}
               />
             )
           })}
@@ -197,7 +288,14 @@ export default function LessonDetailPage() {
         role={role === 'teacher' ? 'teacher' : 'student'}
         onClose={() => setPreviewDoc(null)}
         onDeleted={() => void load({ silent: true })}
+        onRequestDelete={
+          role === 'teacher' && previewDoc
+            ? () => void deleteDocs([previewDoc.id])
+            : undefined
+        }
       />
+
+      {confirmDialog}
     </div>
   )
 }

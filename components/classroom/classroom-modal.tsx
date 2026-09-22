@@ -1,9 +1,18 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+function shouldBlockSpaceScroll(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return true
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return false
+  if (target.isContentEditable) return false
+  const tag = target.tagName
+  if (tag === 'BUTTON' || tag === 'A' || target.getAttribute('role') === 'button') return false
+  return true
+}
 
 export function ClassroomModal({
   open,
@@ -12,6 +21,7 @@ export function ClassroomModal({
   children,
   footer,
   className,
+  overlayClassName,
   busy,
 }: {
   open: boolean
@@ -20,12 +30,39 @@ export function ClassroomModal({
   children: React.ReactNode
   footer?: React.ReactNode
   className?: string
+  /** e.g. z-[60] when stacking above another modal */
+  overlayClassName?: string
   busy?: boolean
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Focus the first text field when the modal opens. Native autoFocus is flaky after a
+  // button click, so Space sometimes scrolls the page instead of typing in the input.
+  useEffect(() => {
+    if (!open) return
+    const t = window.setTimeout(() => {
+      const root = panelRef.current
+      if (!root) return
+      const el = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled])'
+      )
+      if (!el) return
+      el.focus()
+      el.select()
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose()
+      if (e.key === 'Escape' && !busy) {
+        onClose()
+        return
+      }
+      if (e.key === ' ' && shouldBlockSpaceScroll(e.target)) {
+        e.preventDefault()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -35,13 +72,17 @@ export function ClassroomModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50"
+      className={cn(
+        'fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/50',
+        overlayClassName
+      )}
       onClick={() => {
         if (!busy) onClose()
       }}
       role="presentation"
     >
       <div
+        ref={panelRef}
         className={cn(
           'w-full max-w-md rounded-xl border bg-background shadow-xl overflow-hidden flex flex-col',
           className

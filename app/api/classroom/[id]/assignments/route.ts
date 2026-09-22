@@ -31,6 +31,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       'id, lesson_id, title, description, due_at, max_file_bytes, max_score, created_at, classroom_lessons(lesson_index, title)'
     )
     .eq('classroom_id', id)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

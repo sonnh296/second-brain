@@ -35,6 +35,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       .from('classroom_lessons')
       .select('id, lesson_index, title, created_at')
       .eq('classroom_id', id)
+      .is('deleted_at', null)
       .order('lesson_index', { ascending: false }),
     supabase
       .from('classroom_folders')
@@ -69,6 +70,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       .select('id, lesson_id')
       .eq('classroom_id', id)
       .in('lesson_id', lessonIds)
+      .is('deleted_at', null)
 
     const assignList = assigns ?? []
     const assignIds = assignList.map((a) => a.id)

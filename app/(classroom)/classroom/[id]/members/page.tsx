@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { UserMinus } from 'lucide-react'
 import { ClassroomLoading } from '@/components/classroom/classroom-loading'
 import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 
 type Member = {
@@ -29,6 +30,7 @@ function formatJoinedAt(iso: string) {
 export default function ClassroomMembersPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { confirm, dialog } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [className, setClassName] = useState('')
   const [students, setStudents] = useState<Member[]>([])
@@ -66,7 +68,12 @@ export default function ClassroomMembersPage() {
   }, [load])
 
   async function removeStudent(userId: string, label: string) {
-    if (!confirm(`Xóa "${label}" khỏi lớp?`)) return
+    const ok = await confirm({
+      title: `Xóa "${label}" khỏi lớp?`,
+      description: 'Học sinh sẽ mất quyền truy cập lớp học này.',
+      confirmLabel: 'Xóa khỏi lớp',
+    })
+    if (!ok) return
     setBusyId(userId)
     setError(null)
     const res = await fetch(`/api/classroom/${id}/members?user_id=${encodeURIComponent(userId)}`, {
@@ -140,6 +147,7 @@ export default function ClassroomMembersPage() {
           })}
         </ul>
       )}
+      {dialog}
     </div>
   )
 }

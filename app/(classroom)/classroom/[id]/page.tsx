@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Folder, Plus } from 'lucide-react'
+import { Folder, MoreVertical, Plus, Trash2 } from 'lucide-react'
 import { ClassroomLoading, ClassroomTileSkeleton } from '@/components/classroom/classroom-loading'
 import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
 import { ClassroomModal } from '@/components/classroom/classroom-modal'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +25,94 @@ const TILE =
 function nextLessonTitle(lessons: Lesson[]) {
   const nextIndex = lessons.reduce((max, l) => Math.max(max, l.lesson_index), 0) + 1
   return `Buổi ${nextIndex}`
+}
+
+function LessonTile({
+  lesson,
+  classroomId,
+  role,
+  incomplete,
+  onDeleted,
+}: {
+  lesson: Lesson
+  classroomId: string
+  role: 'teacher' | 'student'
+  incomplete: number
+  onDeleted: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const { confirm, dialog } = useConfirm()
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenuOpen(false)
+    const ok = await confirm({
+      title: `Xóa "${lesson.title}"?`,
+      description:
+        'Buổi học cùng tài liệu và bài tập bên trong sẽ được chuyển vào thùng rác. Chat sẽ không tìm thấy nội dung này.',
+      confirmLabel: 'Xóa vào thùng rác',
+    })
+    if (!ok) return
+    setBusy(true)
+    const res = await fetch(`/api/classroom/${classroomId}/lessons/${lesson.id}`, {
+      method: 'DELETE',
+    })
+    setBusy(false)
+    if (res.ok) onDeleted()
+  }
+
+  return (
+    <div className="relative group">
+      <Link
+        href={`/classroom/${classroomId}/lessons/${lesson.id}`}
+        className={`${TILE} ${busy ? 'opacity-50 pointer-events-none' : ''}`}
+      >
+        <Folder className="h-7 w-7 text-sky-600" />
+        <p className="text-[11px] font-medium line-clamp-2 w-full leading-snug">{lesson.title}</p>
+        {role === 'student' && incomplete > 0 && (
+          <p className="text-[10px] text-amber-700 leading-tight">
+            {incomplete} bài tập chưa hoàn thành
+          </p>
+        )}
+      </Link>
+
+      {role === 'teacher' && (
+        <>
+          <button
+            type="button"
+            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted bg-background/80 cursor-pointer"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuOpen((v) => !v)
+            }}
+            aria-label="Tùy chọn buổi học"
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+          {menuOpen && (
+            <div
+              className="absolute top-7 right-1 z-10 bg-popover border rounded-md shadow-md py-1 min-w-[120px]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                onClick={(e) => void handleDelete(e)}
+                disabled={busy}
+              >
+                <Trash2 className="h-3 w-3" />
+                Xóa
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      {dialog}
+    </div>
+  )
 }
 
 export default function ClassroomDetailPage() {
@@ -125,20 +214,16 @@ export default function ClassroomDetailPage() {
             <p className="text-[11px] font-medium">Thêm buổi</p>
           </button>
         )}
-        {lessons.map((l) => {
-          const incomplete = l.incomplete_assignments ?? 0
-          return (
-            <Link key={l.id} href={`/classroom/${id}/lessons/${l.id}`} className={TILE}>
-              <Folder className="h-7 w-7 text-sky-600" />
-              <p className="text-[11px] font-medium line-clamp-2 w-full leading-snug">{l.title}</p>
-              {role === 'student' && incomplete > 0 && (
-                <p className="text-[10px] text-amber-700 leading-tight">
-                  {incomplete} bài tập chưa hoàn thành
-                </p>
-              )}
-            </Link>
-          )
-        })}
+        {lessons.map((l) => (
+          <LessonTile
+            key={l.id}
+            lesson={l}
+            classroomId={id}
+            role={role}
+            incomplete={l.incomplete_assignments ?? 0}
+            onDeleted={() => void load()}
+          />
+        ))}
       </div>
 
       {lessons.length === 0 && role === 'student' && (

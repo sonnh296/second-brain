@@ -60,6 +60,7 @@ export function ClassroomDocumentPreview({
   role,
   onClose,
   onDeleted,
+  onRequestDelete,
 }: {
   open: boolean
   classroomId: string
@@ -67,6 +68,8 @@ export function ClassroomDocumentPreview({
   role: 'teacher' | 'student'
   onClose: () => void
   onDeleted?: () => void
+  /** When set, parent handles confirm + delete (preferred). */
+  onRequestDelete?: () => void
 }) {
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -107,6 +110,10 @@ export function ClassroomDocumentPreview({
 
   async function handleDelete() {
     if (!doc || role !== 'teacher' || deleting) return
+    if (onRequestDelete) {
+      onRequestDelete()
+      return
+    }
     setDeleting(true)
     const res = await fetch(`/api/classroom/${classroomId}/documents/${doc.id}`, {
       method: 'DELETE',

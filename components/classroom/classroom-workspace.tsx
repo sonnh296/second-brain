@@ -11,6 +11,7 @@ import {
   Home,
   Menu,
   MessageSquare,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -66,6 +67,7 @@ export function ClassroomWorkspace({
   const onExam = pathname.startsWith(`${base}/review`)
   const onChat = pathname.startsWith(`${base}/chat`)
   const onMembers = pathname.startsWith(`${base}/members`)
+  const onTrash = pathname.startsWith(`${base}/trash`)
   const onAssignmentDetail =
     /\/assignments\/[^/]+$/.test(pathname) && !pathname.endsWith('/assignments')
   const fillHeight = onChat || onAssignmentDetail
@@ -121,6 +123,16 @@ export function ClassroomWorkspace({
         >
           <Users className="h-4 w-4 shrink-0" />
           Quản lý học sinh
+        </Link>
+      )}
+      {role === 'teacher' && (
+        <Link
+          href={`${base}/trash`}
+          className={navClass(onTrash)}
+          onClick={() => setSidebarOpen(false)}
+        >
+          <Trash2 className="h-4 w-4 shrink-0" />
+          Thùng rác
         </Link>
       )}
     </nav>

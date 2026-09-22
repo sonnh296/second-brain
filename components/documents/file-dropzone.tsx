@@ -14,6 +14,51 @@ const IMAGE_PREVIEW_TYPES = new Set([
   'image/svg+xml',
 ])
 
+const PASTE_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
+
+function normalizePasteFile(file: File): File {
+  if (file.name && file.name !== 'image.png' && !file.name.startsWith('image.')) {
+    return file
+  }
+  const ext = PASTE_EXT[file.type] ?? 'png'
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:TZ.]/g, '')
+    .slice(0, 14)
+  return new File([file], `paste-${stamp}.${ext}`, {
+    type: file.type || 'image/png',
+    lastModified: Date.now(),
+  })
+}
+
+function fileFromClipboard(data: DataTransfer | null): File | null {
+  if (!data) return null
+
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind !== 'file') continue
+    if (item.type && !item.type.startsWith('image/')) continue
+    const blob = item.getAsFile()
+    if (!blob) continue
+    if (blob.type && !blob.type.startsWith('image/')) continue
+    // Empty type still ok if item.type was image/*
+    if (!blob.type && item.type && !item.type.startsWith('image/')) continue
+    return normalizePasteFile(
+      blob.type ? blob : new File([blob], blob.name || 'paste.png', { type: item.type || 'image/png' })
+    )
+  }
+
+  for (const file of Array.from(data.files ?? [])) {
+    if (file.type.startsWith('image/')) return normalizePasteFile(file)
+  }
+
+  return null
+}
+
 interface FileDropzoneProps {
   disabled?: boolean
   onFileSelect: (file: File | null) => void
@@ -26,8 +71,13 @@ export function FileDropzone({
   selectedFile,
 }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const onFileSelectRef = useRef(onFileSelect)
   const [dragOver, setDragOver] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    onFileSelectRef.current = onFileSelect
+  }, [onFileSelect])
 
   useEffect(() => {
     if (!selectedFile || !IMAGE_PREVIEW_TYPES.has(selectedFile.type)) {
@@ -46,6 +96,27 @@ export function FileDropzone({
     },
     [onFileSelect]
   )
+
+  const applyClipboardImage = useCallback((data: DataTransfer | null) => {
+    if (disabled) return false
+    const file = fileFromClipboard(data)
+    if (!file) return false
+    onFileSelectRef.current(file)
+    return true
+  }, [disabled])
+
+  useEffect(() => {
+    if (disabled) return
+    function onPaste(e: ClipboardEvent) {
+      // If clipboard has an image, always take it (even when focus is in the
+      // filename field or the hidden file input after canceling the picker).
+      if (!applyClipboardImage(e.clipboardData)) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('paste', onPaste, true)
+    return () => window.removeEventListener('paste', onPaste, true)
+  }, [disabled, applyClipboardImage])
 
   function onDragOver(e: React.DragEvent) {
     e.preventDefault()
@@ -69,12 +140,23 @@ export function FileDropzone({
     if (inputRef.current) inputRef.current.value = ''
   }
 
+  // After a file is chosen, don't keep this as a Space/Enter target — that steals
+  // keystrokes from the filename rename input in the upload modal header.
+  const pickable = !disabled && !selectedFile
+
   return (
     <div className="w-full">
       <div
-        role="button"
-        tabIndex={0}
+        role={pickable ? 'button' : undefined}
+        tabIndex={pickable ? 0 : -1}
+        onPaste={(e) => {
+          if (applyClipboardImage(e.clipboardData)) {
+            e.preventDefault()
+            e.stopPropagation()
+          }
+        }}
         onKeyDown={(e) => {
+          if (!pickable) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             inputRef.current?.click()
@@ -98,6 +180,7 @@ export function FileDropzone({
           accept={UPLOAD_ACCEPT}
           className="sr-only"
           disabled={disabled}
+          tabIndex={-1}
           onChange={(e) => handleFiles(e.target.files)}
         />
 
@@ -133,7 +216,7 @@ export function FileDropzone({
         ) : (
           <>
             <Upload className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium">Kéo thả file vào đây</p>
+            <p className="text-sm font-medium">Kéo thả hoặc dán ảnh (⌘V)</p>
             <p className="text-xs text-muted-foreground">hoặc</p>
             <Button
               type="button"
