@@ -41,7 +41,7 @@ describe('resolveDocumentScope', () => {
     const result = await resolveDocumentScope(supabase as never, 'user-1', {
       tagIds: ['tag-1'],
     })
-    expect(result).toEqual({ active: true, documentIds: [] })
+    expect(result).toEqual({ active: true, documentIds: [], corpusUserId: 'user-1' })
   })
 
   it('intersects tag docs with done documents', async () => {
@@ -82,6 +82,10 @@ describe('resolveDocumentScope', () => {
     const result = await resolveDocumentScope(supabase as never, 'user-1', {
       tagIds: ['tag-1'],
     })
-    expect(result).toEqual({ active: true, documentIds: ['doc-1'] })
+    expect(result).toEqual({
+      active: true,
+      documentIds: ['doc-1'],
+      corpusUserId: 'user-1',
+    })
   })
 })

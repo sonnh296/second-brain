@@ -35,9 +35,8 @@ export async function GET(
     .from('documents')
     .select(DOCUMENT_SELECT)
     .eq('id', documentId)
-    .eq('user_id', user.id)
     .is('deleted_at', null)
-    .single()
+    .maybeSingle()
 
   if (error || !doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })

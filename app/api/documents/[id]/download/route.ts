@@ -77,10 +77,9 @@ export async function GET(
 
   const { data: doc } = await supabase
     .from('documents')
-    .select('filename, file_type, r2_key')
+    .select('user_id, filename, file_type, r2_key')
     .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
@@ -94,7 +93,7 @@ export async function GET(
     if (!isImageType(doc.file_type)) {
       return NextResponse.json({ error: 'Not an image' }, { status: 400 })
     }
-    return serveThumbnail(user.id, id, doc.r2_key, doc.filename)
+    return serveThumbnail(doc.user_id as string, id, doc.r2_key, doc.filename)
   }
 
   const mime = mimeForType(doc.file_type)

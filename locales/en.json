@@ -84,7 +84,26 @@
     "renameFolderFailed": "Could not rename folder",
     "reuploadFile": "Upload replacement",
     "reuploading": "Uploading replacement...",
-    "reuploadNotice": "Upload a replacement for {filename}. The current failed file remains unchanged until the new file is verified."
+    "reuploadNotice": "Upload a replacement for {filename}. The current failed file remains unchanged until the new file is verified.",
+    "shareFolder": "Share",
+    "shareFolderTitle": "Share: {name}",
+    "shareFolderHint": "Recipients can view and chat RAG on documents in this folder only (not nested subfolders).",
+    "shareIdentifier": "Username or email",
+    "shareIdentifierPlaceholder": "e.g. john_doe",
+    "shareInvite": "Invite",
+    "shareListTitle": "Shared with",
+    "shareListEmpty": "Not shared with anyone yet.",
+    "sharePermissionViewer": "View + chat",
+    "shareRevoke": "Revoke",
+    "shareClose": "Close",
+    "shareLoadFailed": "Could not load shares",
+    "shareInviteFailed": "Could not share",
+    "shareRevokeFailed": "Could not revoke",
+    "sharedWithMe": "Shared with me",
+    "sharedWithMeEmpty": "No folders have been shared with you",
+    "sharedBy": "From {name}",
+    "chatWithFolder": "Chat with this folder",
+    "sharedReadOnly": "View only — RAG chat allowed"
   },
   "admin": {
     "title": "User management",
@@ -164,7 +183,11 @@
     "scopeAll": "Clear (all docs)",
     "scopeNoTags": "No tags yet — create tags on the Documents page.",
     "scopeActive": "Scoped to {count} tag(s)",
-    "scopeCollapsedAll": "All documents"
+    "scopeCollapsedAll": "All documents",
+    "scopeByFolder": "Chat by folder",
+    "scopeFolderAll": "My library",
+    "scopeFolderShared": "Shared with me",
+    "scopeFolderHint": "Only the selected source — other folders are not mixed in"
   },
   "errors": {
     "generic": "Something went wrong"

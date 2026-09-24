@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useChat } from 'ai/react'
+import { useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +14,7 @@ import { ImagePreviewModal } from '@/components/chat/image-preview-modal'
 import { SourceBadge } from '@/components/chat/source-badge'
 import { PendingActionCard } from '@/components/chat/pending-action-card'
 import { ChatTagScope } from '@/components/chat/chat-tag-scope'
+import { ChatFolderScope, type ChatFolderOption } from '@/components/chat/chat-folder-scope'
 import type { AttachedImage, ChatMode, PreviewModal, SessionMessage } from '@/components/chat/types'
 import { CHAT_MODELS, DEFAULT_CHAT_MODEL, type ChatModelId } from '@/lib/ai/models'
 import { dedupeCitedSourcesByFile } from '@/lib/ai/citations'
@@ -32,6 +34,7 @@ import {
 import type {
   ChatSession,
   CitedSource,
+  Folder,
   MessageAttachmentMeta,
   PendingChatAction,
   Tag,
@@ -40,9 +43,11 @@ import type {
 const MODEL_STORAGE_KEY = 'second-brain-chat-model'
 const CHAT_MODE_STORAGE_KEY = 'second-brain-chat-mode'
 const CHAT_TAG_SCOPE_STORAGE_KEY = 'second-brain-chat-tag-ids'
+const CHAT_FOLDER_SCOPE_STORAGE_KEY = 'second-brain-chat-folder-id'
 
 export default function ChatPage() {
   const t = useTranslations('chat')
+  const searchParams = useSearchParams()
   const { confirm, dialog: confirmDialog } = useConfirm()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
@@ -51,6 +56,8 @@ export default function ChatPage() {
   const [chatMode, setChatMode] = useState<ChatMode>('knowledge')
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
+  const [folderOptions, setFolderOptions] = useState<ChatFolderOption[]>([])
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [noContextNotice, setNoContextNotice] = useState<string | null>(null)
@@ -100,7 +107,24 @@ export default function ChatPage() {
     } catch {
       // ignore bad localStorage
     }
+    const savedFolder = localStorage.getItem(CHAT_FOLDER_SCOPE_STORAGE_KEY)
+    if (savedFolder && /^[0-9a-f-]{36}$/i.test(savedFolder)) {
+      setSelectedFolderId(savedFolder)
+    }
   }, [])
+
+  // Deep-link: /chat?folder_id=...
+  useEffect(() => {
+    const fromUrl = searchParams.get('folder_id')
+    if (fromUrl && /^[0-9a-f-]{36}$/i.test(fromUrl)) {
+      setSelectedFolderId(fromUrl)
+      localStorage.setItem(CHAT_FOLDER_SCOPE_STORAGE_KEY, fromUrl)
+      setSelectedTagIds([])
+      localStorage.setItem(CHAT_TAG_SCOPE_STORAGE_KEY, '[]')
+      setChatMode('knowledge')
+      localStorage.setItem(CHAT_MODE_STORAGE_KEY, 'knowledge')
+    }
+  }, [searchParams])
 
   useEffect(() => {
     let cancelled = false
@@ -124,6 +148,50 @@ export default function ChatPage() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const [ownedRes, sharedRes] = await Promise.all([
+        fetch('/api/folders?all=1'),
+        fetch('/api/folders/shared'),
+      ])
+      if (cancelled) return
+      const owned = ownedRes.ok ? ((await ownedRes.json()) as Folder[]) : []
+      const shared = sharedRes.ok
+        ? ((await sharedRes.json()) as {
+            id: string
+            name: string
+            shared_by?: { username: string | null }
+          }[])
+        : []
+      if (cancelled) return
+      const options: ChatFolderOption[] = [
+        ...owned.map((f) => ({ id: f.id, name: f.name, shared: false })),
+        ...shared.map((f) => ({
+          id: f.id,
+          name: f.name,
+          shared: true,
+          sharedBy: f.shared_by?.username ?? null,
+        })),
+      ]
+      setFolderOptions(options)
+      setSelectedFolderId((prev) => {
+        if (!prev) return prev
+        if (options.some((f) => f.id === prev)) return prev
+        localStorage.removeItem(CHAT_FOLDER_SCOPE_STORAGE_KEY)
+        return null
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const selectedFolderIsShared = useMemo(
+    () => folderOptions.some((f) => f.id === selectedFolderId && f.shared),
+    [folderOptions, selectedFolderId]
+  )
+
   const { messages, input, handleInputChange, handleSubmit, isLoading, status, setMessages, data: streamData } = useChat({
     api: '/api/chat',
     id: chatInstanceId,
@@ -131,7 +199,8 @@ export default function ChatPage() {
       session_id: isDraftSession(activeSession) ? undefined : activeSession?.id,
       model: selectedModel,
       mode: chatMode,
-      tag_ids: chatMode === 'knowledge' ? selectedTagIds : [],
+      tag_ids: chatMode === 'knowledge' && !selectedFolderIsShared ? selectedTagIds : [],
+      folder_id: chatMode === 'knowledge' ? selectedFolderId : null,
     },
     onError: (err) => {
       console.error('[chat] Error:', err)
@@ -333,6 +402,20 @@ export default function ChatPage() {
     localStorage.setItem(CHAT_TAG_SCOPE_STORAGE_KEY, JSON.stringify(tagIds))
   }
 
+  function onFolderScopeChange(folderId: string | null) {
+    setSelectedFolderId(folderId)
+    if (folderId) {
+      localStorage.setItem(CHAT_FOLDER_SCOPE_STORAGE_KEY, folderId)
+      const isShared = folderOptions.some((f) => f.id === folderId && f.shared)
+      if (isShared) {
+        setSelectedTagIds([])
+        localStorage.setItem(CHAT_TAG_SCOPE_STORAGE_KEY, '[]')
+      }
+    } else {
+      localStorage.removeItem(CHAT_FOLDER_SCOPE_STORAGE_KEY)
+    }
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!activeSession || ensuringSession || isLoading) return
@@ -355,7 +438,8 @@ export default function ChatPage() {
         session_id: session.id,
         model: selectedModel,
         mode: chatMode,
-        tag_ids: chatMode === 'knowledge' ? selectedTagIds : [],
+        tag_ids: chatMode === 'knowledge' && !selectedFolderIsShared ? selectedTagIds : [],
+        folder_id: chatMode === 'knowledge' ? selectedFolderId : null,
         images: imagePayload,
       },
     })
@@ -656,13 +740,21 @@ export default function ChatPage() {
             </div>
 
             {chatMode === 'knowledge' && (
-              <div className="shrink-0 px-3 sm:px-4 py-1.5 border-b bg-background/80">
-                <ChatTagScope
-                  tags={tags}
-                  selectedTagIds={selectedTagIds}
-                  onChange={onTagScopeChange}
+              <div className="shrink-0 px-3 sm:px-4 py-1.5 border-b bg-background/80 space-y-1.5">
+                <ChatFolderScope
+                  folders={folderOptions}
+                  selectedFolderId={selectedFolderId}
+                  onChange={onFolderScopeChange}
                   disabled={isLoading}
                 />
+                {!selectedFolderIsShared && (
+                  <ChatTagScope
+                    tags={tags}
+                    selectedTagIds={selectedTagIds}
+                    onChange={onTagScopeChange}
+                    disabled={isLoading}
+                  />
+                )}
               </div>
             )}
 

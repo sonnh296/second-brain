@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { Folder, MoreVertical, Pencil } from 'lucide-react'
+import { Folder, MoreVertical, Pencil, Share2 } from 'lucide-react'
 import type { Folder as FolderType } from '@/lib/db/types'
 import { useLongPressSelect } from '@/hooks/use-long-press-select'
 import {
@@ -139,6 +139,7 @@ export function FolderGridItem({
   onOpen,
   onRename,
   onEditDescription,
+  onShare,
   onDropDocs,
   onDropFolders,
   onDelete,
@@ -148,11 +149,14 @@ export function FolderGridItem({
   selectedFolderIds,
   busy,
   busyLabel = 'Đang xóa...',
+  readOnly = false,
+  sharedByLabel,
 }: {
   folder: FolderType
   onOpen: () => void
   onRename: () => void
   onEditDescription: () => void
+  onShare?: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
   onDropFolders?: (targetFolderId: string, folderIds: string[]) => void
   onDelete: () => void
@@ -163,11 +167,19 @@ export function FolderGridItem({
   selectedFolderIds?: string[]
   busy?: boolean
   busyLabel?: string
+  /** Shared-with-me folders: no rename/delete/drop. */
+  readOnly?: boolean
+  sharedByLabel?: string | null
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const t = useTranslations('documents')
 
-  const drop = useFolderDropZone(folder.id, folder.id, onDropDocs, onDropFolders)
+  const drop = useFolderDropZone(
+    folder.id,
+    folder.id,
+    readOnly ? undefined : onDropDocs,
+    readOnly ? undefined : onDropFolders
+  )
 
   const press = useLongPressSelect({
     disabled: busy,
@@ -216,25 +228,45 @@ export function FolderGridItem({
       <div className="flex flex-col items-center text-center gap-2">
         <Folder className="h-10 w-10" style={{ color: folder.color }} />
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{folder.name}</p>
+        {sharedByLabel && (
+          <p className="text-[10px] text-muted-foreground line-clamp-1 w-full">
+            {t('sharedBy', { name: sharedByLabel })}
+          </p>
+        )}
         {folder.description && (
           <p className="text-[10px] text-muted-foreground line-clamp-2 w-full">{folder.description}</p>
         )}
       </div>
-      <button
-        type="button"
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen(!menuOpen)
-        }}
-      >
-        <MoreVertical className="h-3.5 w-3.5" />
-      </button>
-      {menuOpen && (
+      {!readOnly && (
+        <button
+          type="button"
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {menuOpen && !readOnly && (
         <div
-          className="absolute top-8 right-2 z-10 bg-popover border rounded-md shadow-md py-1 min-w-[100px]"
+          className="absolute top-8 right-2 z-10 bg-popover border rounded-md shadow-md py-1 min-w-[120px]"
           onClick={(e) => e.stopPropagation()}
         >
+          {onShare && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted cursor-pointer"
+              onClick={() => {
+                setMenuOpen(false)
+                onShare()
+              }}
+            >
+              <Share2 className="h-3 w-3" />
+              {t('shareFolder')}
+            </button>
+          )}
           <button
             type="button"
             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted cursor-pointer"
@@ -279,6 +311,7 @@ export function FolderListItem({
   folder,
   onOpen,
   onRename,
+  onShare,
   onDropDocs,
   onDropFolders,
   onDelete,
@@ -288,10 +321,13 @@ export function FolderListItem({
   selectedFolderIds,
   busy,
   busyLabel = 'Đang xóa...',
+  readOnly = false,
+  sharedByLabel,
 }: {
   folder: FolderType
   onOpen: () => void
   onRename: () => void
+  onShare?: () => void
   onDropDocs?: (folderId: string, docIds: string[]) => void
   onDropFolders?: (targetFolderId: string, folderIds: string[]) => void
   onDelete: () => void
@@ -301,10 +337,17 @@ export function FolderListItem({
   selectedFolderIds?: string[]
   busy?: boolean
   busyLabel?: string
+  readOnly?: boolean
+  sharedByLabel?: string | null
 }) {
   const t = useTranslations('documents')
 
-  const drop = useFolderDropZone(folder.id, folder.id, onDropDocs, onDropFolders)
+  const drop = useFolderDropZone(
+    folder.id,
+    folder.id,
+    readOnly ? undefined : onDropDocs,
+    readOnly ? undefined : onDropFolders
+  )
 
   const press = useLongPressSelect({
     disabled: busy,
@@ -353,30 +396,50 @@ export function FolderListItem({
       <Folder className="h-8 w-8 shrink-0" style={{ color: folder.color }} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium truncate">{folder.name}</p>
-        {folder.description && (
+        {sharedByLabel ? (
+          <p className="text-xs text-muted-foreground truncate">
+            {t('sharedBy', { name: sharedByLabel })}
+          </p>
+        ) : folder.description ? (
           <p className="text-xs text-muted-foreground truncate">{folder.description}</p>
-        )}
+        ) : null}
       </div>
-      <button
-        type="button"
-        className="text-xs hover:underline shrink-0 cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          onRename()
-        }}
-      >
-        {t('renameFolder')}
-      </button>
-      <button
-        type="button"
-        className="text-xs text-destructive hover:underline shrink-0 cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          onDelete()
-        }}
-      >
-        Xóa
-      </button>
+      {!readOnly && onShare && (
+        <button
+          type="button"
+          className="text-xs hover:underline shrink-0 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            onShare()
+          }}
+        >
+          {t('shareFolder')}
+        </button>
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          className="text-xs hover:underline shrink-0 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRename()
+          }}
+        >
+          {t('renameFolder')}
+        </button>
+      )}
+      {!readOnly && (
+        <button
+          type="button"
+          className="text-xs text-destructive hover:underline shrink-0 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+        >
+          Xóa
+        </button>
+      )}
     </div>
   )
 }

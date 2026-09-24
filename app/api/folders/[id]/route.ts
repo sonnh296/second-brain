@@ -4,6 +4,8 @@ import { createServerSupabaseClient } from '@/lib/db/server'
 import { MAX_FOLDER_DESCRIPTION_LENGTH } from '@/lib/upload/file-types'
 
 const FOLDER_COLUMNS = 'id, parent_id, name, color, description, created_at, updated_at'
+const FOLDER_COLUMNS_WITH_OWNER =
+  'id, parent_id, name, color, description, created_at, updated_at, user_id' as const
 
 const UpdateFolderSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -68,32 +70,48 @@ export async function GET(
 
   const { data: folder } = await supabase
     .from('folders')
-    .select(FOLDER_COLUMNS)
+    .select(FOLDER_COLUMNS_WITH_OWNER)
     .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!folder) {
     return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
   }
 
+  const isOwner = folder.user_id === user.id
   const breadcrumb: { id: string; name: string }[] = []
-  let currentId: string | null = folder.id
 
-  while (currentId) {
-    const { data: node } = await supabase
-      .from('folders')
-      .select('id, name, parent_id')
-      .eq('id', currentId)
-      .eq('user_id', user.id)
-      .single()
+  if (isOwner) {
+    let currentId: string | null = folder.id
+    while (currentId) {
+      const { data: node } = await supabase
+        .from('folders')
+        .select('id, name, parent_id')
+        .eq('id', currentId)
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-    if (!node) break
-    breadcrumb.unshift({ id: node.id, name: node.name })
-    currentId = node.parent_id
+      if (!node) break
+      breadcrumb.unshift({ id: node.id, name: node.name })
+      currentId = node.parent_id
+    }
+  } else {
+    breadcrumb.push({ id: folder.id, name: folder.name })
   }
 
-  return NextResponse.json({ folder, breadcrumb })
+  return NextResponse.json({
+    folder: {
+      id: folder.id,
+      parent_id: folder.parent_id,
+      name: folder.name,
+      color: folder.color,
+      description: folder.description,
+      created_at: folder.created_at,
+      updated_at: folder.updated_at,
+    },
+    breadcrumb,
+    read_only: !isOwner,
+  })
 }
 
 export async function PATCH(

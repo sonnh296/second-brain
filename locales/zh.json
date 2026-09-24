@@ -84,7 +84,26 @@
     "renameFolderFailed": "无法重命名文件夹",
     "reuploadFile": "上传替换文件",
     "reuploading": "正在上传替换文件...",
-    "reuploadNotice": "为 {filename} 上传替换文件。新文件验证完成前，当前失败文件保持不变。"
+    "reuploadNotice": "为 {filename} 上传替换文件。新文件验证完成前，当前失败文件保持不变。",
+    "shareFolder": "分享",
+    "shareFolderTitle": "分享：{name}",
+    "shareFolderHint": "被分享者只能查看并基于该文件夹内文档进行 RAG 对话（不含子文件夹）。",
+    "shareIdentifier": "用户名或邮箱",
+    "shareIdentifierPlaceholder": "例如：zhang_san",
+    "shareInvite": "邀请",
+    "shareListTitle": "已分享给",
+    "shareListEmpty": "尚未分享给任何人。",
+    "sharePermissionViewer": "查看 + 对话",
+    "shareRevoke": "撤销",
+    "shareClose": "关闭",
+    "shareLoadFailed": "无法加载分享列表",
+    "shareInviteFailed": "无法分享",
+    "shareRevokeFailed": "无法撤销",
+    "sharedWithMe": "与我共享",
+    "sharedWithMeEmpty": "还没有文件夹分享给你",
+    "sharedBy": "来自 {name}",
+    "chatWithFolder": "与此文件夹对话",
+    "sharedReadOnly": "只读 — 允许 RAG 对话"
   },
   "admin": {
     "title": "用户管理",
@@ -164,7 +183,11 @@
     "scopeAll": "清除（全部文档）",
     "scopeNoTags": "还没有标签 — 请在文档页创建。",
     "scopeActive": "已限定 {count} 个标签",
-    "scopeCollapsedAll": "全部文档"
+    "scopeCollapsedAll": "全部文档",
+    "scopeByFolder": "按文件夹对话",
+    "scopeFolderAll": "我的资料库",
+    "scopeFolderShared": "与我共享",
+    "scopeFolderHint": "仅使用所选来源 — 不会混入其他文件夹"
   },
   "errors": {
     "generic": "出错了"

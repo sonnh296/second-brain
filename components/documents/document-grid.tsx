@@ -127,7 +127,7 @@ export function DriveGridItem({
   onOpen: () => void
   onSelect?: (docId: string) => void
   onEdit?: () => void
-  onDelete: () => void
+  onDelete?: () => void
   onToggleFavorite?: () => void
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: (e: React.DragEvent) => void
@@ -195,17 +195,19 @@ export function DriveGridItem({
         )}
         {doc.status !== 'done' && <StatusBadge status={doc.status} />}
       </div>
-      <button
-        type="button"
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted cursor-pointer"
-        onClick={(e) => {
-          e.stopPropagation()
-          setMenuOpen(!menuOpen)
-        }}
-      >
-        <MoreVertical className="h-3.5 w-3.5" />
-      </button>
-      {menuOpen && (
+      {(onEdit || onDelete) && (
+        <button
+          type="button"
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-muted cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen(!menuOpen)
+          }}
+        >
+          <MoreVertical className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {menuOpen && (onEdit || onDelete) && (
         <div
           className="absolute top-8 right-2 z-10 bg-popover border rounded-md shadow-md py-1 min-w-[100px]"
           onClick={(e) => e.stopPropagation()}
@@ -219,13 +221,15 @@ export function DriveGridItem({
               Sửa
             </button>
           )}
-          <button
-            type="button"
-            className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer"
-            onClick={onDelete}
-          >
-            Xóa
-          </button>
+          {onDelete && (
+            <button
+              type="button"
+              className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer"
+              onClick={onDelete}
+            >
+              Xóa
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -254,7 +258,7 @@ export function DriveListItem({
   onOpen: () => void
   onSelect?: (docId: string) => void
   onEdit?: () => void
-  onDelete: () => void
+  onDelete?: () => void
   onToggleFavorite?: () => void
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: (e: React.DragEvent) => void
@@ -336,17 +340,19 @@ export function DriveListItem({
             Sửa
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs text-destructive hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-        >
-          Xóa
-        </Button>
+        {onDelete && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs text-destructive hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            Xóa
+          </Button>
+        )}
       </div>
     </div>
   )

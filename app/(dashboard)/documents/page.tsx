@@ -19,6 +19,8 @@ import {
   StickyNote,
   Sparkles,
   Star,
+  Share2,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +35,7 @@ import { NoteModal } from "@/components/documents/note-modal";
 import { UploadModal } from "@/components/documents/upload-modal";
 import { TagManager } from "@/components/documents/tag-manager";
 import { FileIcon } from "@/components/documents/file-icon";
+import { FolderShareModal } from "@/components/documents/folder-share-modal";
 import type {
   TypeFilter,
   StatusFilter,
@@ -46,6 +49,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { MarkdownContent } from "@/components/markdown-content";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 import {
   FolderGridItem,
   FolderListItem,
@@ -123,6 +127,7 @@ const SIDEBAR_TYPES: {
 export default function DocumentsPage() {
   const td = useTranslations("documents");
   const tc = useTranslations("common");
+  const router = useRouter();
   const { confirm, confirmChoice, dialog: confirmDialog } = useConfirm();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +148,15 @@ export default function DocumentsPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
+  const [sharedFolders, setSharedFolders] = useState<
+    (Folder & {
+      share_id: string;
+      shared_by: { id: string; username: string | null };
+    })[]
+  >([]);
+  const [sharedMode, setSharedMode] = useState(false);
+  const [folderReadOnly, setFolderReadOnly] = useState(false);
+  const [sharingFolder, setSharingFolder] = useState<Folder | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<
     { id: string | null; name: string }[]
   >([{ id: null, name: "Gốc" }]);
@@ -260,21 +274,40 @@ export default function DocumentsPage() {
     if (res.ok) setAllFolders(await res.json());
   }, []);
 
+  const fetchSharedFolders = useCallback(async () => {
+    const res = await fetch("/api/folders/shared");
+    if (res.ok) {
+      setSharedFolders(await res.json());
+    } else {
+      setSharedFolders([]);
+    }
+  }, []);
+
   const fetchFolders = useCallback(async (parentId: string | null) => {
     const q = parentId ? `?parent_id=${parentId}` : "?parent_id=root";
     const res = await fetch(`/api/folders${q}`);
     if (res.ok) setFolders(await res.json());
   }, []);
 
-  const loadBreadcrumb = useCallback(async (folderId: string | null) => {
+  const loadBreadcrumb = useCallback(async (folderId: string | null, shared = false) => {
     if (!folderId) {
-      setBreadcrumb([{ id: null, name: td("root") }]);
+      setBreadcrumb([{ id: null, name: shared ? td("sharedWithMe") : td("root") }]);
+      setFolderReadOnly(shared);
       return;
     }
     const res = await fetch(`/api/folders/${folderId}`);
     if (res.ok) {
       const data = await res.json();
-      setBreadcrumb([{ id: null, name: td("root") }, ...data.breadcrumb]);
+      const readOnly = Boolean(data.read_only) || shared;
+      setFolderReadOnly(readOnly);
+      if (shared || data.read_only) {
+        setBreadcrumb([
+          { id: null, name: td("sharedWithMe") },
+          ...data.breadcrumb,
+        ]);
+      } else {
+        setBreadcrumb([{ id: null, name: td("root") }, ...data.breadcrumb]);
+      }
     }
   }, [td]);
 
@@ -292,17 +325,46 @@ export default function DocumentsPage() {
     async (folderId: string | null) => {
       const favorite = typeFilter === "favorite";
       if (favorite) {
+        setSharedMode(false);
+        setFolderReadOnly(false);
         await Promise.all([fetchDocuments(null, true), fetchAllFolders()]);
         return;
       }
+      if (sharedMode) {
+        await fetchSharedFolders();
+        if (!folderId) {
+          setFolders([]);
+          setDocuments([]);
+          setFolderReadOnly(true);
+          setBreadcrumb([{ id: null, name: td("sharedWithMe") }]);
+          return;
+        }
+        setFolders([]);
+        await Promise.all([
+          fetchDocuments(folderId),
+          loadBreadcrumb(folderId, true),
+        ]);
+        return;
+      }
+      setFolderReadOnly(false);
       await Promise.all([
         fetchFolders(folderId),
         fetchDocuments(folderId),
-        loadBreadcrumb(folderId),
+        loadBreadcrumb(folderId, false),
         fetchAllFolders(),
+        fetchSharedFolders(),
       ]);
     },
-    [fetchFolders, fetchDocuments, loadBreadcrumb, fetchAllFolders, typeFilter],
+    [
+      fetchFolders,
+      fetchDocuments,
+      loadBreadcrumb,
+      fetchAllFolders,
+      fetchSharedFolders,
+      typeFilter,
+      sharedMode,
+      td,
+    ],
   );
 
   useEffect(() => {
@@ -423,6 +485,34 @@ export default function DocumentsPage() {
     setFolderSelectionMode(false);
     setSelectedFolderIds([]);
     setLoading(true);
+  }
+
+  function enterSharedMode() {
+    setTrashMode(false);
+    setTypeFilter("all");
+    setSharedMode(true);
+    setFolderReadOnly(true);
+    setCurrentFolderId(null);
+    closePreview();
+    setSelectedDocIds([]);
+    setDocSelectionMode(false);
+    setFolderSelectionMode(false);
+    setSelectedFolderIds([]);
+    setLoading(true);
+    setSidebarOpen(false);
+  }
+
+  function exitSharedMode() {
+    setSharedMode(false);
+    setFolderReadOnly(false);
+    setCurrentFolderId(null);
+    closePreview();
+    setLoading(true);
+  }
+
+  function chatWithCurrentFolder() {
+    if (!currentFolderId) return;
+    router.push(`/chat?folder_id=${currentFolderId}`);
   }
 
   async function createFolder() {
@@ -648,14 +738,35 @@ export default function DocumentsPage() {
 
   const visibleFolders = useMemo(() => {
     if (typeFilter === "favorite") return [];
-    if (!searchQuery.trim()) return folders;
+    const source =
+      sharedMode && !currentFolderId
+        ? (sharedFolders as Folder[])
+        : sharedMode
+          ? []
+          : folders;
+    if (!searchQuery.trim()) return source;
     const q = searchQuery.toLowerCase();
-    return folders.filter(
+    return source.filter(
       (folder) =>
         folder.name.toLowerCase().includes(q) ||
         (folder.description?.toLowerCase().includes(q) ?? false),
     );
-  }, [folders, searchQuery, typeFilter]);
+  }, [
+    folders,
+    sharedFolders,
+    sharedMode,
+    currentFolderId,
+    searchQuery,
+    typeFilter,
+  ]);
+
+  const sharedByLabelFor = useCallback(
+    (folderId: string) => {
+      const row = sharedFolders.find((f) => f.id === folderId);
+      return row?.shared_by?.username ?? null;
+    },
+    [sharedFolders],
+  );
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -1266,6 +1377,11 @@ export default function DocumentsPage() {
   return (
     <div className="relative flex h-full">
       {confirmDialog}
+      <FolderShareModal
+        folder={sharingFolder}
+        open={Boolean(sharingFolder)}
+        onClose={() => setSharingFolder(null)}
+      />
       <Dialog
         open={summaryOpen}
         title={td("aiSummaryTitle")}
@@ -1523,6 +1639,8 @@ export default function DocumentsPage() {
               onClick={() => {
                 setTypeFilter(item.id);
                 setTrashMode(false);
+                setSharedMode(false);
+                setFolderReadOnly(false);
                 setSidebarOpen(false);
               }}
               className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
@@ -1607,10 +1725,30 @@ export default function DocumentsPage() {
             <option value="failed">Lỗi</option>
           </select>
         </div>
-        <div className="p-2 border-t">
+        <div className="p-2 border-t space-y-1">
           <button
             type="button"
             onClick={() => {
+              if (sharedMode) {
+                exitSharedMode();
+              } else {
+                enterSharedMode();
+              }
+            }}
+            className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
+              sharedMode
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-foreground hover:bg-muted"
+            }`}
+          >
+            <Share2 className="h-4 w-4" />
+            <span className="flex-1 text-left">{td("sharedWithMe")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSharedMode(false);
+              setFolderReadOnly(false);
               setTrashMode((v) => !v);
               setTypeFilter("all");
               setSidebarOpen(false);
@@ -1645,12 +1783,31 @@ export default function DocumentsPage() {
               variant="ghost"
               className="h-9 px-2"
               onClick={() => {
-                const parent =
-                  breadcrumb.length > 2
-                    ? breadcrumb[breadcrumb.length - 2].id
-                    : null;
-                navigateToFolder(parent);
+                if (sharedMode) {
+                  const parent =
+                    breadcrumb.length > 2
+                      ? breadcrumb[breadcrumb.length - 2].id
+                      : null;
+                  // Shared breadcrumb: [Shared, Folder] — back goes to shared root
+                  navigateToFolder(parent);
+                } else {
+                  const parent =
+                    breadcrumb.length > 2
+                      ? breadcrumb[breadcrumb.length - 2].id
+                      : null;
+                  navigateToFolder(parent);
+                }
               }}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          )}
+          {sharedMode && !currentFolderId && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-9 px-2"
+              onClick={() => exitSharedMode()}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -1698,6 +1855,21 @@ export default function DocumentsPage() {
             <div className="w-px bg-border -skew-x-12" />
           </div>
 
+          {currentFolderId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => chatWithCurrentFolder()}
+              title={td("chatWithFolder")}
+            >
+              <MessageSquare className="h-4 w-4 mr-1.5" />
+              <span className="hidden sm:inline">{td("chatWithFolder")}</span>
+            </Button>
+          )}
+
+          {!folderReadOnly && (
           <div className="relative shrink-0" ref={addMenuRef}>
             <Button
               type="button"
@@ -1770,8 +1942,9 @@ export default function DocumentsPage() {
               </div>
             )}
           </div>
+          )}
 
-          {selectedFolderIds.length > 0 ? (
+          {selectedFolderIds.length > 0 && !folderReadOnly ? (
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-xs text-muted-foreground">
                 {selectedFolderIds.length} thư mục
@@ -2105,12 +2278,17 @@ export default function DocumentsPage() {
                     <p className="text-sm">
                       {typeFilter === "favorite"
                         ? td("favoritesEmpty")
-                        : "Thư mục trống"}
+                        : sharedMode && !currentFolderId
+                          ? td("sharedWithMeEmpty")
+                          : "Thư mục trống"}
                     </p>
-                    {typeFilter !== "favorite" && (
+                    {typeFilter !== "favorite" && !sharedMode && (
                       <p className="text-xs mt-1">
                         Tạo thư mục hoặc upload file mới
                       </p>
+                    )}
+                    {sharedMode && currentFolderId && (
+                      <p className="text-xs mt-1">{td("sharedReadOnly")}</p>
                     )}
                   </div>
                 ) : (
@@ -2126,6 +2304,7 @@ export default function DocumentsPage() {
                             onOpen={() => navigateToFolder(folder.id)}
                             onRename={() => openRenameFolder(folder)}
                             onEditDescription={() => openEditFolderDescription(folder)}
+                            onShare={() => setSharingFolder(folder)}
                             onDropDocs={(folderId, docIds) =>
                               void moveDocsToFolder(folderId, docIds)
                             }
@@ -2134,10 +2313,14 @@ export default function DocumentsPage() {
                             }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
-                            selectionMode={folderSelectionMode}
+                            selectionMode={folderSelectionMode && !folderReadOnly}
                             selected={selectedFolderIds.includes(folder.id)}
-                            onSelect={toggleFolderSelection}
+                            onSelect={folderReadOnly ? undefined : toggleFolderSelection}
                             selectedFolderIds={selectedFolderIds}
+                            readOnly={folderReadOnly || sharedMode}
+                            sharedByLabel={
+                              sharedMode ? sharedByLabelFor(folder.id) : null
+                            }
                           />
                         ))}
                       </div>
@@ -2149,6 +2332,7 @@ export default function DocumentsPage() {
                             folder={folder}
                             onOpen={() => navigateToFolder(folder.id)}
                             onRename={() => openRenameFolder(folder)}
+                            onShare={() => setSharingFolder(folder)}
                             onDropDocs={(folderId, docIds) =>
                               void moveDocsToFolder(folderId, docIds)
                             }
@@ -2157,10 +2341,14 @@ export default function DocumentsPage() {
                             }
                             onDelete={() => deleteFolder(folder.id)}
                             busy={deletingFolderIds.includes(folder.id)}
-                            selectionMode={folderSelectionMode}
+                            selectionMode={folderSelectionMode && !folderReadOnly}
                             selected={selectedFolderIds.includes(folder.id)}
-                            onSelect={toggleFolderSelection}
+                            onSelect={folderReadOnly ? undefined : toggleFolderSelection}
                             selectedFolderIds={selectedFolderIds}
+                            readOnly={folderReadOnly || sharedMode}
+                            sharedByLabel={
+                              sharedMode ? sharedByLabelFor(folder.id) : null
+                            }
                           />
                         ))}
                       </div>
@@ -2179,18 +2367,30 @@ export default function DocumentsPage() {
                             key={doc.id}
                             doc={doc}
                             selected={selectedDocIds.includes(doc.id)}
-                            selectionMode={docSelectionMode}
+                            selectionMode={docSelectionMode && !folderReadOnly}
                             onOpen={() => openDocument(doc)}
-                            onSelect={toggleDocSelection}
+                            onSelect={folderReadOnly ? undefined : toggleDocSelection}
                             onEdit={
-                              doc.file_type === "note"
+                              !folderReadOnly && doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)
                                 : undefined
                             }
-                            onDelete={() => handleDelete(doc.id)}
-                            onToggleFavorite={() => void toggleFavorite(doc)}
-                            onDragStart={(e) => handleDocDragStart(doc, e)}
-                            onDragEnd={handleDocDragEnd}
+                            onDelete={
+                              folderReadOnly
+                                ? undefined
+                                : () => handleDelete(doc.id)
+                            }
+                            onToggleFavorite={
+                              folderReadOnly
+                                ? undefined
+                                : () => void toggleFavorite(doc)
+                            }
+                            onDragStart={
+                              folderReadOnly
+                                ? undefined
+                                : (e) => handleDocDragStart(doc, e)
+                            }
+                            onDragEnd={folderReadOnly ? undefined : handleDocDragEnd}
                             fileIcon={<FileIcon type={doc.file_type} />}
                             busy={deletingDocIds.includes(doc.id)}
                           />
@@ -2203,16 +2403,24 @@ export default function DocumentsPage() {
                             key={doc.id}
                             doc={doc}
                             selected={selectedDocIds.includes(doc.id)}
-                            selectionMode={docSelectionMode}
+                            selectionMode={docSelectionMode && !folderReadOnly}
                             onOpen={() => openDocument(doc)}
-                            onSelect={toggleDocSelection}
+                            onSelect={folderReadOnly ? undefined : toggleDocSelection}
                             onEdit={
-                              doc.file_type === "note"
+                              !folderReadOnly && doc.file_type === "note"
                                 ? () => openEditNoteModal(doc)
                                 : undefined
                             }
-                            onDelete={() => handleDelete(doc.id)}
-                            onToggleFavorite={() => void toggleFavorite(doc)}
+                            onDelete={
+                              folderReadOnly
+                                ? undefined
+                                : () => handleDelete(doc.id)
+                            }
+                            onToggleFavorite={
+                              folderReadOnly
+                                ? undefined
+                                : () => void toggleFavorite(doc)
+                            }
                             fileIcon={
                               <FileIcon type={doc.file_type} size="sm" />
                             }
@@ -2284,7 +2492,11 @@ export default function DocumentsPage() {
                       : undefined
                   }
                   reuploading={uploading && reuploadDoc?.id === selectedDoc.id}
-                  onDelete={() => handleDelete(selectedDoc.id)}
+                  onDelete={
+                    folderReadOnly
+                      ? undefined
+                      : () => handleDelete(selectedDoc.id)
+                  }
                   deleting={deletingDocIds.includes(selectedDoc.id)}
                 />
               </div>

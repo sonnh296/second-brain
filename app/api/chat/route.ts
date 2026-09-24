@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { streamText, StreamData, type CoreMessage } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
-import { createServerSupabaseClient } from '@/lib/db/server'
+import { createServerSupabaseClient, createServiceSupabaseClient } from '@/lib/db/server'
 import { embedSingle } from '@/lib/ingestion/embed'
 import {
   buildSystemPrompt,
@@ -148,6 +148,8 @@ export async function POST(req: NextRequest) {
   const hasTextMessage = message.trim().length > 0
 
   let scopeDocumentIds: string[] | undefined
+  /** Owner of vectors/docs when chatting a shared folder; else the querier. */
+  let corpusUserId = userId
   if (mode === 'knowledge') {
     try {
       const scope = await resolveDocumentScope(supabase, userId, {
@@ -156,6 +158,7 @@ export async function POST(req: NextRequest) {
       })
       if (scope.active) {
         scopeDocumentIds = scope.documentIds
+        corpusUserId = scope.corpusUserId
       }
     } catch (err) {
       logger.error('Failed to resolve chat document scope', {
@@ -170,6 +173,7 @@ export async function POST(req: NextRequest) {
   const inventoryOpts = scopeDocumentIds
     ? { documentIds: scopeDocumentIds }
     : undefined
+  const chattingSharedFolder = corpusUserId !== userId
 
   if (mode === 'knowledge' && !noContext) {
     if (!hasTextMessage && images.length > 0) {
@@ -177,16 +181,17 @@ export async function POST(req: NextRequest) {
       conversational = true
     } else if (isGreeting(message)) {
       conversational = true
-    } else if (isDocumentManagementQuery(message)) {
+    } else if (isDocumentManagementQuery(message) && !chattingSharedFolder) {
       // Skip RAG — rename/move/tag/note tools need Postgres search, not chunk retrieval.
       // Running RAG here causes lag and a misleading "no documents" system prompt.
+      // Shared-folder viewers cannot mutate the owner's library.
       documentManagement = true
     } else if (scopeDocumentIds && scopeDocumentIds.length === 0) {
       noContext = true
     } else if (isDocumentInventoryQuery(message)) {
       const inventory = await searchDocumentInventory(
         supabase,
-        userId,
+        corpusUserId,
         message,
         inventoryOpts
       )
@@ -196,7 +201,7 @@ export async function POST(req: NextRequest) {
       } else {
         const catalog = await listUserDocumentCatalog(
           supabase,
-          userId,
+          corpusUserId,
           inventoryOpts
         )
         if (catalog.length > 0) {
@@ -213,13 +218,21 @@ export async function POST(req: NextRequest) {
       })
       let retrievedChunks: Awaited<ReturnType<typeof hybridSearch>> = []
       try {
+        // Shared-folder FTS RPC requires p_user_id = auth.uid(); use service
+        // role + internal RPC keyed by the owner's corpus user id.
+        const searchClient = chattingSharedFolder
+          ? createServiceSupabaseClient()
+          : supabase
         retrievedChunks = await hybridSearch(
-          supabase,
-          userId,
+          searchClient,
+          corpusUserId,
           message,
           questionVector,
           RERANK_CANDIDATES,
-          scopeDocumentIds ? { documentIds: scopeDocumentIds } : undefined
+          {
+            ...(scopeDocumentIds ? { documentIds: scopeDocumentIds } : {}),
+            ...(chattingSharedFolder ? { serviceRole: true } : {}),
+          }
         )
       } catch (err) {
         logger.error('RAG search failed', { err, userId, sessionId: session_id })

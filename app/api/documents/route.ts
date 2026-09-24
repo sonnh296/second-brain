@@ -54,6 +54,22 @@ export async function GET(req: NextRequest) {
   const trashView = req.nextUrl.searchParams.get('trash') === '1'
   const favoriteView = req.nextUrl.searchParams.get('favorite') === '1'
 
+  let sharedFolderView = false
+  if (
+    typeof folderId === 'string' &&
+    !trashView &&
+    !favoriteView
+  ) {
+    const { data: folder } = await supabase
+      .from('folders')
+      .select('id, user_id')
+      .eq('id', folderId)
+      .maybeSingle()
+    if (folder && folder.user_id !== user.id) {
+      sharedFolderView = true
+    }
+  }
+
   type SelectMode = 'full' | 'no_favorite' | 'legacy'
 
   async function runQuery(mode: SelectMode) {
@@ -64,7 +80,9 @@ export async function GET(req: NextRequest) {
           ? DOCUMENT_SELECT_NO_FAVORITE
           : DOCUMENT_SELECT_LEGACY
 
-    let query = supabase.from('documents').select(select).eq('user_id', user!.id)
+    let query = sharedFolderView
+      ? supabase.from('documents').select(select)
+      : supabase.from('documents').select(select).eq('user_id', user!.id)
 
     if (mode === 'legacy') {
       if (trashView) {

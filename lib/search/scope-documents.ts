@@ -9,12 +9,23 @@ export type ChatDocumentScope = {
 
 export type ResolvedDocumentScope =
   | { active: false }
-  | { active: true; documentIds: string[] }
+  | {
+      active: true
+      documentIds: string[]
+      /**
+       * User id whose corpus to search in Qdrant/FTS.
+       * For shared folders this is the folder owner (vectors stay under owner).
+       */
+      corpusUserId: string
+    }
 
 /**
  * Resolve chat scope filters to a set of ready document IDs.
- * When no filters are set, returns `{ active: false }` (search whole library).
+ * When no filters are set, returns `{ active: false }` (search whole owned library).
  * When filters are set but nothing matches, returns `{ active: true, documentIds: [] }`.
+ *
+ * Shared folders: grantee must pass `folderId`; tags are ignored (personal tags don't apply).
+ * Default unscoped chat never includes shared docs.
  */
 export async function resolveDocumentScope(
   supabase: SupabaseClient,
@@ -30,9 +41,42 @@ export async function resolveDocumentScope(
     return { active: false }
   }
 
+  let corpusUserId = userId
+  let sharedFolder = false
+
+  if (hasFolderFilter) {
+    const { data: folder } = await supabase
+      .from('folders')
+      .select('id, user_id')
+      .eq('id', folderId)
+      .maybeSingle()
+
+    if (!folder) {
+      return { active: true, documentIds: [], corpusUserId: userId }
+    }
+
+    if (folder.user_id === userId) {
+      corpusUserId = userId
+    } else {
+      const { data: share } = await supabase
+        .from('folder_shares')
+        .select('id')
+        .eq('folder_id', folderId)
+        .eq('grantee_id', userId)
+        .maybeSingle()
+
+      if (!share) {
+        return { active: true, documentIds: [], corpusUserId: userId }
+      }
+      sharedFolder = true
+      corpusUserId = folder.user_id as string
+    }
+  }
+
   let allowedIds: Set<string> | null = null
 
-  if (hasTagFilter) {
+  // Personal tags only apply to the querier's own library.
+  if (hasTagFilter && !sharedFolder) {
     const { data: rows, error } = await supabase
       .from('document_tags')
       .select('document_id')
@@ -45,14 +89,14 @@ export async function resolveDocumentScope(
 
     allowedIds = new Set((rows ?? []).map((r) => r.document_id as string))
     if (allowedIds.size === 0) {
-      return { active: true, documentIds: [] }
+      return { active: true, documentIds: [], corpusUserId }
     }
   }
 
   let query = supabase
     .from('documents')
     .select('id')
-    .eq('user_id', userId)
+    .eq('user_id', corpusUserId)
     .eq('status', 'done')
     .is('deleted_at', null)
 
@@ -69,7 +113,7 @@ export async function resolveDocumentScope(
     let fallback = supabase
       .from('documents')
       .select('id')
-      .eq('user_id', userId)
+      .eq('user_id', corpusUserId)
       .eq('status', 'done')
 
     if (allowedIds) {
@@ -88,6 +132,7 @@ export async function resolveDocumentScope(
   return {
     active: true,
     documentIds: [...new Set((docs ?? []).map((d) => d.id as string))],
+    corpusUserId,
   }
 }
 

@@ -35,8 +35,7 @@ export async function GET(
       'id, filename, file_type, status, note_content, extracted_content, ocr_text, error_message'
     )
     .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!doc) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 })
