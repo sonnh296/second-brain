@@ -60,7 +60,7 @@ interface DocumentPreviewPanelProps {
   reuploading?: boolean
   onKeepWeakOcr?: () => void
   keepingWeakOcr?: boolean
-  onDelete: () => void
+  onDelete?: () => void
   deleting?: boolean
 }
 
@@ -1232,15 +1232,17 @@ export function DocumentPreviewPanel({
                 {reuploading ? t('reuploading') : t('reuploadFile')}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex-1"
-              onClick={onDelete}
-              disabled={keepingWeakOcr || deleting || reuploading}
-            >
-              {deleting ? 'Đang xóa...' : 'Xóa'}
-            </Button>
+            {onDelete && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={onDelete}
+                disabled={keepingWeakOcr || deleting || reuploading}
+              >
+                {deleting ? 'Đang xóa...' : 'Xóa'}
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -1362,9 +1364,11 @@ export function DocumentPreviewPanel({
                   {reprocessingOcr ? 'Đang quét lại...' : 'Quét lại OCR'}
                 </Button>
               )}
-              <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>
-                {deleting ? 'Đang xóa...' : 'Xóa'}
-              </Button>
+              {onDelete && (
+                <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>
+                  {deleting ? 'Đang xóa...' : 'Xóa'}
+                </Button>
+              )}
             </div>
           </div>
         </div>
