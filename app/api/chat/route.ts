@@ -59,7 +59,7 @@ const ChatSchema = z.object({
   images: z.array(ImageAttachmentSchema).max(5).optional().default([]),
   /** Knowledge mode: restrict RAG to docs with any of these tags. */
   tag_ids: z.array(z.string().uuid()).max(20).optional().default([]),
-  /** Knowledge mode: restrict RAG to one folder (exact, not nested). */
+  /** Knowledge mode: restrict RAG to one folder tree (includes nested subfolders). */
   folder_id: z.string().uuid().nullable().optional(),
 }).superRefine((data, ctx) => {
   const hasMessage = !!data.message?.trim()

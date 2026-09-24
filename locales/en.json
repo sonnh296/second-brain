@@ -87,7 +87,7 @@
     "reuploadNotice": "Upload a replacement for {filename}. The current failed file remains unchanged until the new file is verified.",
     "shareFolder": "Share",
     "shareFolderTitle": "Share: {name}",
-    "shareFolderHint": "Recipients can view and chat RAG on documents in this folder only (not nested subfolders).",
+    "shareFolderHint": "Recipients can view and chat RAG on this entire folder tree, including subfolders. In chat, pick only the shared root folder.",
     "shareIdentifier": "Username or email",
     "shareIdentifierPlaceholder": "e.g. john_doe",
     "shareInvite": "Invite",
@@ -187,7 +187,7 @@
     "scopeByFolder": "Chat by folder",
     "scopeFolderAll": "My library",
     "scopeFolderShared": "Shared with me",
-    "scopeFolderHint": "Only the selected source — other folders are not mixed in"
+    "scopeFolderHint": "Pick a root folder — includes nested documents; other sources are not mixed in"
   },
   "errors": {
     "generic": "Something went wrong"

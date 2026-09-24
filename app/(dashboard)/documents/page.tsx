@@ -339,8 +339,8 @@ export default function DocumentsPage() {
           setBreadcrumb([{ id: null, name: td("sharedWithMe") }]);
           return;
         }
-        setFolders([]);
         await Promise.all([
+          fetchFolders(folderId),
           fetchDocuments(folderId),
           loadBreadcrumb(folderId, true),
         ]);
@@ -741,9 +741,7 @@ export default function DocumentsPage() {
     const source =
       sharedMode && !currentFolderId
         ? (sharedFolders as Folder[])
-        : sharedMode
-          ? []
-          : folders;
+        : folders;
     if (!searchQuery.trim()) return source;
     const q = searchQuery.toLowerCase();
     return source.filter(

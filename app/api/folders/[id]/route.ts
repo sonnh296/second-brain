@@ -96,7 +96,19 @@ export async function GET(
       currentId = node.parent_id
     }
   } else {
-    breadcrumb.push({ id: folder.id, name: folder.name })
+    // Walk up while RLS allows (stops above the shared root).
+    let currentId: string | null = folder.id
+    while (currentId) {
+      const { data: node } = await supabase
+        .from('folders')
+        .select('id, name, parent_id')
+        .eq('id', currentId)
+        .maybeSingle()
+
+      if (!node) break
+      breadcrumb.unshift({ id: node.id, name: node.name })
+      currentId = node.parent_id
+    }
   }
 
   return NextResponse.json({

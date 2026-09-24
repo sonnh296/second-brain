@@ -44,11 +44,27 @@ export async function GET(req: NextRequest) {
 
   const parentId = parseParentId(req.nextUrl.searchParams.get('parent_id'))
 
-  let query = supabase
-    .from('folders')
-    .select(FOLDER_COLUMNS)
-    .eq('user_id', user.id)
-    .order('name', { ascending: true })
+  // If listing children of a shared (or nested-under-share) folder, do not
+  // filter by the querier's user_id — RLS limits to the shared subtree.
+  let sharedParent = false
+  if (parentId) {
+    const { data: parent } = await supabase
+      .from('folders')
+      .select('id, user_id')
+      .eq('id', parentId)
+      .maybeSingle()
+    if (parent && parent.user_id !== user.id) {
+      sharedParent = true
+    }
+  }
+
+  let query = sharedParent
+    ? supabase.from('folders').select(FOLDER_COLUMNS).order('name', { ascending: true })
+    : supabase
+        .from('folders')
+        .select(FOLDER_COLUMNS)
+        .eq('user_id', user.id)
+        .order('name', { ascending: true })
 
   query =
     parentId === null

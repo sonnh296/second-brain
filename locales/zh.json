@@ -87,7 +87,7 @@
     "reuploadNotice": "为 {filename} 上传替换文件。新文件验证完成前，当前失败文件保持不变。",
     "shareFolder": "分享",
     "shareFolderTitle": "分享：{name}",
-    "shareFolderHint": "被分享者只能查看并基于该文件夹内文档进行 RAG 对话（不含子文件夹）。",
+    "shareFolderHint": "被分享者可查看并基于该文件夹整棵目录树（含子文件夹）进行 RAG 对话。聊天时只需选择被分享的根文件夹。",
     "shareIdentifier": "用户名或邮箱",
     "shareIdentifierPlaceholder": "例如：zhang_san",
     "shareInvite": "邀请",
@@ -187,7 +187,7 @@
     "scopeByFolder": "按文件夹对话",
     "scopeFolderAll": "我的资料库",
     "scopeFolderShared": "与我共享",
-    "scopeFolderHint": "仅使用所选来源 — 不会混入其他文件夹"
+    "scopeFolderHint": "选择根文件夹 — 包含子文件夹中的文档；不会混入其他来源"
   },
   "errors": {
     "generic": "出错了"

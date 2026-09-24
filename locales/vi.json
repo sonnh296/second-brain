@@ -87,7 +87,7 @@
     "reuploadNotice": "Tải file thay thế cho {filename}. File lỗi hiện tại được giữ nguyên cho đến khi file mới được xác minh.",
     "shareFolder": "Chia sẻ",
     "shareFolderTitle": "Chia sẻ: {name}",
-    "shareFolderHint": "Người được share chỉ xem và chat RAG trên tài liệu trong thư mục này (không gồm thư mục con).",
+    "shareFolderHint": "Người được share xem và chat RAG trên toàn bộ thư mục này, gồm cả thư mục con. Khi chat chỉ cần chọn thư mục được share (thư mục gốc).",
     "shareIdentifier": "Tên đăng nhập hoặc email",
     "shareIdentifierPlaceholder": "vd: nguyen_van_a",
     "shareInvite": "Mời",
@@ -187,7 +187,7 @@
     "scopeByFolder": "Chat theo thư mục",
     "scopeFolderAll": "Thư viện của tôi",
     "scopeFolderShared": "Được chia sẻ",
-    "scopeFolderHint": "Chỉ dùng nguồn đã chọn — không trộn thư mục khác"
+    "scopeFolderHint": "Chọn thư mục gốc — gồm cả tài liệu trong thư mục con, không trộn nguồn khác"
   },
   "errors": {
     "generic": "Đã xảy ra lỗi"

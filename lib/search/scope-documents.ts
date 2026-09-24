@@ -1,9 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { findDirectShareRoot, listFolderSubtreeIds } from '@/lib/folders/subtree'
 
 export type ChatDocumentScope = {
   /** Match documents that have any of these tags (OR). Empty / omitted = no tag filter. */
   tagIds?: string[]
-  /** Exact folder only (not nested). Null/undefined = no folder filter. */
+  /**
+   * Folder scope includes this folder and all nested subfolders.
+   * Null/undefined = no folder filter.
+   */
   folderId?: string | null
 }
 
@@ -24,7 +28,8 @@ export type ResolvedDocumentScope =
  * When no filters are set, returns `{ active: false }` (search whole owned library).
  * When filters are set but nothing matches, returns `{ active: true, documentIds: [] }`.
  *
- * Shared folders: grantee must pass `folderId`; tags are ignored (personal tags don't apply).
+ * Shared folders: grantee must pass a folder under a share (usually the share root);
+ * tags are ignored (personal tags don't apply). Folder scope is recursive.
  * Default unscoped chat never includes shared docs.
  */
 export async function resolveDocumentScope(
@@ -43,6 +48,7 @@ export async function resolveDocumentScope(
 
   let corpusUserId = userId
   let sharedFolder = false
+  let folderIds: string[] | null = null
 
   if (hasFolderFilter) {
     const { data: folder } = await supabase
@@ -58,18 +64,21 @@ export async function resolveDocumentScope(
     if (folder.user_id === userId) {
       corpusUserId = userId
     } else {
-      const { data: share } = await supabase
-        .from('folder_shares')
-        .select('id')
-        .eq('folder_id', folderId)
-        .eq('grantee_id', userId)
-        .maybeSingle()
-
-      if (!share) {
+      const shareRoot = await findDirectShareRoot(supabase, folderId, userId)
+      if (!shareRoot) {
         return { active: true, documentIds: [], corpusUserId: userId }
       }
       sharedFolder = true
       corpusUserId = folder.user_id as string
+    }
+
+    folderIds = await listFolderSubtreeIds(
+      supabase,
+      folderId,
+      corpusUserId
+    )
+    if (folderIds.length === 0) {
+      return { active: true, documentIds: [], corpusUserId }
     }
   }
 
@@ -103,8 +112,8 @@ export async function resolveDocumentScope(
   if (allowedIds) {
     query = query.in('id', [...allowedIds])
   }
-  if (hasFolderFilter) {
-    query = query.eq('folder_id', folderId)
+  if (folderIds) {
+    query = query.in('folder_id', folderIds)
   }
 
   let { data: docs, error: docError } = await query
@@ -119,8 +128,8 @@ export async function resolveDocumentScope(
     if (allowedIds) {
       fallback = fallback.in('id', [...allowedIds])
     }
-    if (hasFolderFilter) {
-      fallback = fallback.eq('folder_id', folderId)
+    if (folderIds) {
+      fallback = fallback.in('folder_id', folderIds)
     }
     ;({ data: docs, error: docError } = await fallback)
   }
