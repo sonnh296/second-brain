@@ -16,10 +16,11 @@ import {
   markdownToHtml,
   type AssignmentComment,
 } from '@/components/classroom/assignment-editor'
+import { SubmissionFilePreviewList } from '@/components/classroom/submission-file-preview'
 
 // type Rubric = { id: string; name: string; criteria: { items?: { id: string; label: string }[] } }
 
-type FileMeta = { file_id?: string; filename: string; r2_key?: string }
+type FileMeta = { file_id?: string; filename: string; r2_key?: string; file_type?: string }
 
 type Grade = { score: number; comment: string | null }
 
@@ -667,27 +668,19 @@ export default function AssignmentDetailPage() {
                           minHeightClass="min-h-[320px]"
                         />
                         {(activeStudent.submission.files ?? []).length > 0 && (
-                          <ul className="text-sm space-y-1">
-                            {activeStudent.submission.files.map((f) => (
-                              <li key={f.file_id ?? f.filename}>
-                                {f.file_id ? (
-                                  <a
-                                    href={downloadHref(
-                                      id,
-                                      assignmentId,
-                                      f.file_id,
-                                      activeStudent.student_id
-                                    )}
-                                    className="text-sky-700 hover:underline"
-                                  >
-                                    Tải: {f.filename}
-                                  </a>
-                                ) : (
-                                  f.filename
-                                )}
-                              </li>
-                            ))}
-                          </ul>
+                          <SubmissionFilePreviewList
+                            files={activeStudent.submission.files}
+                            viewerHref={(f) =>
+                              f.file_id
+                                ? downloadHref(
+                                    id,
+                                    assignmentId,
+                                    f.file_id,
+                                    activeStudent.student_id
+                                  )
+                                : null
+                            }
+                          />
                         )}
                       </>
                     )}
@@ -842,22 +835,12 @@ export default function AssignmentDetailPage() {
             />
 
             {(submission?.files ?? []).length > 0 && (
-              <ul className="text-sm space-y-1">
-                {submission!.files.map((f) => (
-                  <li key={f.file_id ?? f.filename}>
-                    {f.file_id ? (
-                      <a
-                        href={downloadHref(id, assignmentId, f.file_id)}
-                        className="text-sky-700 hover:underline"
-                      >
-                        {f.filename}
-                      </a>
-                    ) : (
-                      f.filename
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <SubmissionFilePreviewList
+                files={submission!.files}
+                viewerHref={(f) =>
+                  f.file_id ? downloadHref(id, assignmentId, f.file_id) : null
+                }
+              />
             )}
             {studentEditing && (
               <div>

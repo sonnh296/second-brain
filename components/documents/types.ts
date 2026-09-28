@@ -1,6 +1,14 @@
 import type { DocumentStatus } from '@/lib/db/types'
 
-export type TypeFilter = 'all' | 'note' | 'pdf' | 'docx' | 'txt' | 'favorite'
+export type TypeFilter =
+  | 'all'
+  | 'note'
+  | 'pdf'
+  | 'docx'
+  | 'txt'
+  | 'xlsx'
+  | 'video'
+  | 'favorite'
 export type StatusFilter = 'all' | DocumentStatus
 export type SortBy = 'date' | 'name'
 export type ViewMode = 'grid' | 'list'

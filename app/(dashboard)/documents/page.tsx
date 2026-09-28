@@ -14,6 +14,7 @@ import {
   Folder as FolderIcon,
   FolderPlus,
   ChevronLeft,
+  ChevronRight,
   Trash2,
   RotateCcw,
   StickyNote,
@@ -21,6 +22,8 @@ import {
   Star,
   Share2,
   MessageSquare,
+  Film,
+  Sheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,12 +94,20 @@ const STATUS_LABELS: Record<DocStatus, string> = {
   failed: "Lỗi",
 };
 
-const SIDEBAR_TYPES: {
-  id: TypeFilter;
-  labelKey: "all" | "favorites" | "notes" | "pdf" | "word" | "text";
+type SidebarTypeLabelKey =
+  | "favorites"
+  | "notes"
+  | "pdf"
+  | "word"
+  | "text"
+  | "excel"
+  | "video";
+
+const SIDEBAR_CHILD_TYPES: {
+  id: Exclude<TypeFilter, "all">;
+  labelKey: SidebarTypeLabelKey;
   icon: React.ReactNode;
 }[] = [
-  { id: "all", labelKey: "all", icon: <File className="h-4 w-4" /> },
   {
     id: "favorite",
     labelKey: "favorites",
@@ -121,6 +132,16 @@ const SIDEBAR_TYPES: {
     id: "txt",
     labelKey: "text",
     icon: <FileText className="h-4 w-4 text-muted-foreground" />,
+  },
+  {
+    id: "xlsx",
+    labelKey: "excel",
+    icon: <Sheet className="h-4 w-4 text-emerald-600" />,
+  },
+  {
+    id: "video",
+    labelKey: "video",
+    icon: <Film className="h-4 w-4 text-pink-500" />,
   },
 ];
 
@@ -219,6 +240,7 @@ export default function DocumentsPage() {
   const [savingDescription, setSavingDescription] = useState(false);
   const [savingContent, setSavingContent] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [typeListExpanded, setTypeListExpanded] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>("date");
@@ -709,6 +731,14 @@ export default function DocumentsPage() {
     let result = [...documents];
     if (typeFilter === "favorite") {
       result = result.filter((d) => d.is_favorite);
+    } else if (typeFilter === "video") {
+      result = result.filter(
+        (d) => d.file_type === "mp4" || d.file_type === "mov",
+      );
+    } else if (typeFilter === "xlsx") {
+      result = result.filter(
+        (d) => d.file_type === "xlsx" || d.file_type === "xls",
+      );
     } else if (typeFilter !== "all") {
       result = result.filter((d) => d.file_type === typeFilter);
     }
@@ -774,6 +804,8 @@ export default function DocumentsPage() {
     for (const d of documents) {
       counts[d.file_type] = (counts[d.file_type] ?? 0) + 1;
     }
+    counts.xlsx = (counts.xlsx ?? 0) + (counts.xls ?? 0);
+    counts.video = (counts.mp4 ?? 0) + (counts.mov ?? 0);
     return counts;
   }, [documents]);
 
@@ -1630,30 +1662,85 @@ export default function DocumentsPage() {
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5 md:pt-2">
-          {SIDEBAR_TYPES.map((item) => (
+          <div className="flex items-center gap-0.5">
             <button
-              key={item.id}
               type="button"
               onClick={() => {
-                setTypeFilter(item.id);
+                setTypeFilter("all");
                 setTrashMode(false);
                 setSharedMode(false);
                 setFolderReadOnly(false);
                 setSidebarOpen(false);
               }}
-              className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
-                typeFilter === item.id
+              className={`min-w-0 flex-1 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
+                typeFilter === "all" && !sharedMode && !trashMode
                   ? "bg-primary/10 text-primary font-medium"
                   : "text-foreground hover:bg-muted"
               }`}
             >
-              {item.icon}
-              <span className="flex-1 text-left">{td(item.labelKey)}</span>
+              <File className="h-4 w-4 shrink-0" />
+              <span className="flex-1 text-left truncate">{td("all")}</span>
               <span className="text-xs text-muted-foreground">
-                {typeCounts[item.id] ?? 0}
+                {typeCounts.all ?? 0}
               </span>
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setTypeListExpanded((v) => !v)}
+              aria-expanded={typeListExpanded}
+              aria-label={td("toggleTypeFilters")}
+              className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer flex items-center justify-center"
+            >
+              <ChevronRight
+                className={`h-4 w-4 transition-transform duration-150 ${
+                  typeListExpanded ? "rotate-90" : ""
+                }`}
+              />
+            </button>
+          </div>
+          {typeListExpanded &&
+            SIDEBAR_CHILD_TYPES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setTypeFilter(item.id);
+                  setTrashMode(false);
+                  setSharedMode(false);
+                  setFolderReadOnly(false);
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 pl-5 text-sm transition-colors cursor-pointer ${
+                  typeFilter === item.id && !sharedMode && !trashMode
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {item.icon}
+                <span className="flex-1 text-left">{td(item.labelKey)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {typeCounts[item.id] ?? 0}
+                </span>
+              </button>
+            ))}
+          <button
+            type="button"
+            onClick={() => {
+              if (sharedMode) {
+                exitSharedMode();
+              } else {
+                enterSharedMode();
+              }
+            }}
+            className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
+              sharedMode
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-foreground hover:bg-muted"
+            }`}
+          >
+            <Share2 className="h-4 w-4" />
+            <span className="flex-1 text-left">{td("sharedWithMe")}</span>
+          </button>
         </nav>
         <div className="p-2 border-t space-y-2">
           <div className="flex items-center justify-between px-2">
@@ -1724,24 +1811,6 @@ export default function DocumentsPage() {
           </select>
         </div>
         <div className="p-2 border-t space-y-1">
-          <button
-            type="button"
-            onClick={() => {
-              if (sharedMode) {
-                exitSharedMode();
-              } else {
-                enterSharedMode();
-              }
-            }}
-            className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer ${
-              sharedMode
-                ? "bg-primary/10 text-primary font-medium"
-                : "text-foreground hover:bg-muted"
-            }`}
-          >
-            <Share2 className="h-4 w-4" />
-            <span className="flex-1 text-left">{td("sharedWithMe")}</span>
-          </button>
           <button
             type="button"
             onClick={() => {
