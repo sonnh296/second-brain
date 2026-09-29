@@ -38,13 +38,21 @@ describe('parseCitationsFromResponse', () => {
     ])
   })
 
-  it('returns empty citations when block missing (no silent fallback)', () => {
+  it('returns empty citations when block missing (caller may soft-fallback)', () => {
     const { content, citedSources } = parseCitationsFromResponse(
       'No citation block',
       sources
     )
     expect(content).toBe('No citation block')
     expect(citedSources).toEqual([])
+  })
+
+  it('accepts optional whitespace in the CITATIONS marker', () => {
+    const text =
+      'Answer here.\n\n<!-- CITATIONS: ["vietnam-startup-ecosystem.txt:0"] -->'
+    const { content, citedSources } = parseCitationsFromResponse(text, sources)
+    expect(content).toBe('Answer here.')
+    expect(citedSources).toHaveLength(1)
   })
 
   it('returns empty citations when JSON is malformed', () => {

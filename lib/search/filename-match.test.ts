@@ -60,6 +60,14 @@ describe('extractFilenameKeywords', () => {
   it('drops generic summarize-file phrasing', () => {
     expect(extractFilenameKeywords('tóm tắt file word')).toEqual([])
   })
+
+  it('keeps lich/hoc/mon and drops anh from file-ảnh phrasing', () => {
+    const keys = extractFilenameKeywords('Lịch đi học môn C (file ảnh)')
+    expect(keys).toContain('lich')
+    expect(keys).toContain('hoc')
+    expect(keys).toContain('mon')
+    expect(keys).not.toContain('anh')
+  })
 })
 
 describe('scoreFilenameHaystack', () => {
@@ -78,6 +86,20 @@ describe('scoreFilenameHaystack', () => {
     const s = scoreFilenameHaystack('att-vcx (2).docx', 'an toàn thông tin', ['vcx'])
     expect(s.hits).toBe(1)
     expect(s.score).toBeGreaterThan(0)
+  })
+
+  it('matches accented Vietnamese filename with unaccented keywords', () => {
+    const s = scoreFilenameHaystack('Lịch đi học môn C', null, ['lich', 'hoc', 'mon'])
+    expect(s.hits).toBe(3)
+    expect(s.strong).toBe(true)
+    expect(s.score).toBeGreaterThan(
+      scoreFilenameHaystack('Lịch 工程训练C', null, ['lich', 'hoc', 'mon']).score
+    )
+  })
+
+  it('does not treat anh as a hit inside phanh or danh', () => {
+    expect(scoreFilenameHaystack('servo có phanh', null, ['anh']).hits).toBe(0)
+    expect(scoreFilenameHaystack('Bảng danh sách biến gửi đi .png', null, ['anh']).hits).toBe(0)
   })
 })
 

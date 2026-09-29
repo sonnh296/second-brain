@@ -22,13 +22,33 @@ export async function getProfileStats(
   supabase: SupabaseClient,
   userId: string
 ): Promise<ProfileStats> {
+  let profileQuery = await supabase
+    .from('profiles')
+    .select(
+      'username, role, display_name, avatar_r2_key, personalization_enabled, personalization_consent_at'
+    )
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (
+    profileQuery.error &&
+    (profileQuery.error.code === '42703' ||
+      profileQuery.error.message?.includes('display_name') ||
+      profileQuery.error.message?.includes('avatar_r2_key') ||
+      profileQuery.error.message?.includes('personalization'))
+  ) {
+    profileQuery = await supabase
+      .from('profiles')
+      .select('username, role')
+      .eq('id', userId)
+      .maybeSingle()
+  }
+
   const [
-    { data: profile },
     { data: docs },
     { data: attachments },
     usageResult,
   ] = await Promise.all([
-    supabase.from('profiles').select('username, role').eq('id', userId).maybeSingle(),
     supabase
       .from('documents')
       .select('file_size_bytes, deleted_at')
@@ -42,6 +62,7 @@ export async function getProfileStats(
       .limit(5000),
   ])
 
+  const profile = profileQuery.data
   const usageRows = usageResult.data
   const usageTrackingAvailable = !usageResult.error
   if (usageResult.error) {
@@ -122,9 +143,34 @@ export async function getProfileStats(
 
   const byDay = [...byDayMap.values()].sort((a, b) => a.date.localeCompare(b.date))
 
+  // Migration 017 may not be applied yet — fall back gracefully.
+  const profileRow = profile as
+    | {
+        username?: string
+        role?: string
+        display_name?: string | null
+        avatar_r2_key?: string | null
+        personalization_enabled?: boolean | null
+        personalization_consent_at?: string | null
+      }
+    | null
+
+  const hasAvatar = Boolean(profileRow?.avatar_r2_key)
+  const avatarKey = profileRow?.avatar_r2_key ?? ''
+  // Stable per object key so browser can cache; changes when file key changes.
+  const avatarVersion = avatarKey
+    ? Buffer.from(avatarKey).toString('base64url').slice(0, 16)
+    : ''
+
   return {
-    username: profile?.username ?? 'user',
-    role: profile?.role ?? 'user',
+    username: profileRow?.username ?? 'user',
+    display_name: profileRow?.display_name ?? null,
+    role: profileRow?.role ?? 'user',
+    avatar_url: hasAvatar
+      ? `/api/profile/avatar?v=${encodeURIComponent(avatarVersion || userId)}`
+      : null,
+    personalization_enabled: Boolean(profileRow?.personalization_enabled),
+    personalization_consent_at: profileRow?.personalization_consent_at ?? null,
     usage_tracking_available: usageTrackingAvailable,
     storage: {
       documents_bytes: documentsBytes,

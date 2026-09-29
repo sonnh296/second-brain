@@ -30,6 +30,7 @@ ${LANGUAGE_RULE}
 - Khi user nhắc tên file, thương hiệu, hoặc từ khóa giống tên tài liệu — ưu tiên nguồn có filename khớp.
 - Khi trích dẫn, dùng đúng tên file từ thuộc tính filename. KHÔNG dùng UUID hay document ID.
 - Nếu ngữ cảnh không đủ để trả lời, nói rõ — không bịa.
+- Khi câu trả lời dựa trên <source>, LUÔN thêm block CITATIONS với đúng filename đã dùng (không để trống nếu đã dùng nguồn).
 - Nếu user hỏi đang có những tài liệu nào: chỉ liệt kê file có trong <context>, không bịa thêm file ngoài ngữ cảnh.
 - Dùng Markdown khi hữu ích (danh sách, in đậm).
 - Ngắn gọn, chính xác.

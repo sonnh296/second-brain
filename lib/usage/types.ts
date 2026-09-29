@@ -26,7 +26,13 @@ export type TokenByDay = TokenTotals & {
 
 export type ProfileStats = {
   username: string
+  /** Shown in UI; falls back to username when empty */
+  display_name: string | null
   role: string
+  /** Authenticated avatar stream URL, or null if none */
+  avatar_url: string | null
+  personalization_enabled: boolean
+  personalization_consent_at: string | null
   storage: StorageStats
   /** False when usage_logs table is missing or unreadable */
   usage_tracking_available: boolean

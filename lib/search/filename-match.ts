@@ -83,6 +83,9 @@ const FILENAME_STOP = new Set([
   'help',
   'between',
   'compare',
+  // From "(file ảnh)" / "hình ảnh" — substring-matches unrelated names (phanh, danh…).
+  'anh',
+  'hinh',
 ])
 
 export type ContextChunk = {
@@ -115,10 +118,6 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-function sanitizeIlike(term: string): string {
-  return term.replaceAll(/[%_,()]/g, ' ').trim()
-}
-
 function stripEdgeHyphens(token: string): string {
   let start = 0
   let end = token.length
@@ -126,6 +125,32 @@ function stripEdgeHyphens(token: string): string {
   while (end > start && token[end - 1] === '-') end--
   return token.slice(start, end)
 }
+
+/** Tokenize for accent-insensitive whole-token checks (avoids anh⊂phanh). */
+function normalizedTokens(text: string): Set<string> {
+  const parts = normalize(text)
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .split(/[\s-]+/)
+    .map(stripEdgeHyphens)
+    .filter(Boolean)
+  return new Set(parts)
+}
+
+/**
+ * Short keywords must match a whole token; longer ones may substring-match
+ * (brands like leishine inside a longer title).
+ */
+function keywordHitsHaystack(
+  keyword: string,
+  flat: string,
+  tokens: Set<string>
+): boolean {
+  if (keyword.length <= 3) return tokens.has(keyword)
+  return flat.includes(keyword)
+}
+
+/** Cap when scanning filenames in JS (metadata only — not full file bodies). */
+const FILENAME_CANDIDATE_LIMIT = 5000
 
 function chunkKey(documentId: string, chunkIndex: number): string {
   return `${documentId}:${chunkIndex}`
@@ -182,6 +207,8 @@ export function scoreFilenameHaystack(
 ): { score: number; hits: number; strong: boolean } {
   const name = normalize(filename)
   const desc = normalize(description ?? '')
+  const nameTokens = normalizedTokens(filename)
+  const descTokens = normalizedTokens(description ?? '')
   let score = 0
   let hits = 0
   let longHit = false
@@ -189,8 +216,8 @@ export function scoreFilenameHaystack(
   for (const k of keywords) {
     const nk = normalize(k)
     if (!nk) continue
-    const inName = name.includes(nk)
-    const inDesc = desc.includes(nk)
+    const inName = keywordHitsHaystack(nk, name, nameTokens)
+    const inDesc = keywordHitsHaystack(nk, desc, descTokens)
     if (!inName && !inDesc) continue
     hits++
     score += inName ? nk.length * 2 : nk.length
@@ -213,6 +240,10 @@ export function estimateTokens(text: string): number {
 /**
  * Load early chunks from documents whose filename/description matches the query.
  * Works without re-embedding — covers existing files like "leishine" vs Chinese body text.
+ *
+ * Accent-safe: do NOT prefilter with Postgres ILIKE on accent-stripped keywords
+ * (ILIKE is accent-sensitive, so "lich" misses "Lịch"). Fetch filename metadata
+ * and score in JS with the same normalize() used for keywords.
  */
 export async function loadFilenameMatchedChunks(
   supabase: SupabaseClient,
@@ -224,16 +255,7 @@ export async function loadFilenameMatchedChunks(
   if (keywords.length === 0) return []
   if (options.documentIds && options.documentIds.length === 0) return []
 
-  const orFilter = keywords
-    .slice(0, 6)
-    .flatMap((k) => {
-      const t = sanitizeIlike(k)
-      if (t.length < 3) return []
-      return [`filename.ilike.%${t}%`, `description.ilike.%${t}%`]
-    })
-    .join(',')
-
-  if (!orFilter) return []
+  const scoped = options.documentIds && options.documentIds.length > 0
 
   let queryBuilder = supabase
     .from('documents')
@@ -241,11 +263,12 @@ export async function loadFilenameMatchedChunks(
     .eq('user_id', userId)
     .eq('status', 'done')
     .is('deleted_at', null)
-    .or(orFilter)
-    .limit(40)
+    .order('created_at', { ascending: false })
 
-  if (options.documentIds && options.documentIds.length > 0) {
-    queryBuilder = queryBuilder.in('id', options.documentIds)
+  if (scoped) {
+    queryBuilder = queryBuilder.in('id', options.documentIds!)
+  } else {
+    queryBuilder = queryBuilder.limit(FILENAME_CANDIDATE_LIMIT)
   }
 
   let { data: docs, error } = await queryBuilder
@@ -256,10 +279,11 @@ export async function loadFilenameMatchedChunks(
       .select('id, filename, description')
       .eq('user_id', userId)
       .eq('status', 'done')
-      .or(orFilter)
-      .limit(40)
-    if (options.documentIds && options.documentIds.length > 0) {
-      fallback = fallback.in('id', options.documentIds)
+      .order('created_at', { ascending: false })
+    if (scoped) {
+      fallback = fallback.in('id', options.documentIds!)
+    } else {
+      fallback = fallback.limit(FILENAME_CANDIDATE_LIMIT)
     }
     ;({ data: docs, error } = await fallback)
   }

@@ -35,6 +35,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/chat') ||
     pathname.startsWith('/documents') ||
     pathname.startsWith('/profile') ||
+    pathname.startsWith('/settings') ||
     pathname.startsWith('/admin')
   const isProtectedApi =
     pathname.startsWith('/api/classroom') ||

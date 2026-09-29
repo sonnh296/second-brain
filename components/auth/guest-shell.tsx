@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { GuestAmbient } from "@/components/auth/guest-ambient";
 import { LanguageSwitcher } from "@/components/dashboard/language-switcher";
@@ -91,6 +92,15 @@ export function GuestShell({
 
           <p className="mt-8 text-[11px] text-muted-foreground/80 hidden lg:block">
             noteeverything.site · v{APP_VERSION}
+            {' · '}
+            <Link href="/contact" className="hover:text-foreground underline-offset-2 hover:underline">
+              {t('contactSales')}
+            </Link>
+          </p>
+          <p className="mt-8 text-[11px] text-muted-foreground/80 lg:hidden">
+            <Link href="/contact" className="hover:text-foreground underline-offset-2 hover:underline">
+              {t('contactSales')}
+            </Link>
           </p>
         </aside>
 

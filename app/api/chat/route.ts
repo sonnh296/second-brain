@@ -17,6 +17,11 @@ import {
 } from '@/lib/ai/prompt'
 import { isGreeting, isDocumentInventoryQuery, isDocumentManagementQuery } from '@/lib/ai/query-intent'
 import { parseCitationsFromResponse } from '@/lib/ai/citations'
+import {
+  resolveFollowUpRetrieval,
+  fallbackCitationsFromSources,
+  type HistoryTurn,
+} from '@/lib/ai/follow-up'
 import { rerankChunks, RERANK_CANDIDATES } from '@/lib/ai/rerank'
 import { hybridSearch } from '@/lib/search/hybrid'
 import { filterRelevantChunks } from '@/lib/search/relevance-filter'
@@ -175,6 +180,34 @@ export async function POST(req: NextRequest) {
     : undefined
   const chattingSharedFolder = corpusUserId !== userId
 
+  // Load recent turns early so follow-up RAG can sticky-pin prior citations.
+  const { data: historyForRag } = await supabase
+    .from('messages')
+    .select('id, role, content, cited_sources')
+    .eq('session_id', session_id)
+    .order('created_at', { ascending: false })
+    .limit(CHAT_HISTORY_LIMIT)
+
+  const historyTurnsDesc = historyForRag ?? []
+  const historyTurnsAsc: HistoryTurn[] = [...historyTurnsDesc]
+    .reverse()
+    .map((m) => ({
+      role: m.role as string,
+      content: (m.content as string) ?? '',
+      cited_sources: (m.cited_sources as HistoryTurn['cited_sources']) ?? [],
+    }))
+
+  const followUp = resolveFollowUpRetrieval(message, historyTurnsAsc)
+  if (followUp.isFollowUp) {
+    logger.info('RAG follow-up sticky', {
+      userId,
+      sessionId: session_id,
+      stickyDocumentIds: followUp.stickyDocumentIds,
+      priorFilenames: followUp.priorFilenames,
+      searchQueryPreview: followUp.searchQuery.slice(0, 120),
+    })
+  }
+
   if (mode === 'knowledge' && !noContext) {
     if (!hasTextMessage && images.length > 0) {
       // Image-only turns should not spend embedding / retrieval budget on an empty query.
@@ -212,7 +245,19 @@ export async function POST(req: NextRequest) {
         }
       }
     } else {
-      const questionVector = await embedSingle(message, {
+      const searchQuery = followUp.searchQuery || message
+      let searchDocIds = scopeDocumentIds
+      if (followUp.stickyDocumentIds.length > 0) {
+        searchDocIds = scopeDocumentIds
+          ? scopeDocumentIds.filter((id) => followUp.stickyDocumentIds.includes(id))
+          : followUp.stickyDocumentIds
+        // Sticky + active scope with no overlap → fall back to scope (or full corpus).
+        if (searchDocIds.length === 0) {
+          searchDocIds = scopeDocumentIds
+        }
+      }
+
+      const questionVector = await embedSingle(searchQuery, {
         userId,
         purpose: 'embedding_query',
       })
@@ -223,17 +268,29 @@ export async function POST(req: NextRequest) {
         const searchClient = chattingSharedFolder
           ? createServiceSupabaseClient()
           : supabase
-        retrievedChunks = await hybridSearch(
-          searchClient,
-          corpusUserId,
-          message,
-          questionVector,
-          RERANK_CANDIDATES,
-          {
-            ...(scopeDocumentIds ? { documentIds: scopeDocumentIds } : {}),
-            ...(chattingSharedFolder ? { serviceRole: true } : {}),
-          }
-        )
+        const runSearch = (documentIds?: string[]) =>
+          hybridSearch(
+            searchClient,
+            corpusUserId,
+            searchQuery,
+            questionVector,
+            RERANK_CANDIDATES,
+            {
+              ...(documentIds ? { documentIds } : {}),
+              ...(chattingSharedFolder ? { serviceRole: true } : {}),
+            }
+          )
+
+        retrievedChunks = await runSearch(searchDocIds)
+        // Sticky miss (deleted / empty) → retry without sticky pin.
+        const usedStickyOnly =
+          followUp.stickyDocumentIds.length > 0 &&
+          Array.isArray(searchDocIds) &&
+          searchDocIds.length > 0 &&
+          searchDocIds.every((id) => followUp.stickyDocumentIds.includes(id))
+        if (retrievedChunks.length === 0 && usedStickyOnly) {
+          retrievedChunks = await runSearch(scopeDocumentIds)
+        }
       } catch (err) {
         logger.error('RAG search failed', { err, userId, sessionId: session_id })
         noContext = true
@@ -262,7 +319,7 @@ export async function POST(req: NextRequest) {
             filenameByDocId
           )
 
-        const reranked = await rerankChunks(message, relevantChunks, resolveFilename)
+        const reranked = await rerankChunks(searchQuery, relevantChunks, resolveFilename)
         usedKnowledge = reranked.length > 0
         sources = reranked.map((r) => ({
           ...r,
@@ -274,14 +331,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { data: history } = await supabase
-    .from('messages')
-    .select('id, role, content')
-    .eq('session_id', session_id)
-    .order('created_at', { ascending: false })
-    .limit(CHAT_HISTORY_LIMIT)
-
-  const historyRows = (history ?? []).reverse()
+  const historyRows = historyTurnsDesc
+    .map((m) => ({
+      id: m.id as string,
+      role: m.role as string,
+      content: (m.content as string) ?? '',
+    }))
+    .reverse()
   const historyIds = historyRows.map((m) => m.id)
 
   let attachmentsByMessage = new Map<
@@ -398,7 +454,12 @@ export async function POST(req: NextRequest) {
           (pendingActionCount > 0
             ? 'Đã tạo đề xuất. Vui lòng bấm **Xác nhận** trong thẻ bên dưới để áp dụng.'
             : '')
-        const { content, citedSources } = parseCitationsFromResponse(rawText, sources)
+        let { content, citedSources } = parseCitationsFromResponse(rawText, sources)
+
+        // Soft fallback: model used RAG context but forgot / emptied CITATIONS.
+        if (citedSources.length === 0 && sources.length > 0 && usedKnowledge) {
+          citedSources = fallbackCitationsFromSources(content, sources, { maxFiles: 3 })
+        }
 
         const chatTokens = fromAiSdkSteps(steps, usage)
         await logUsage({

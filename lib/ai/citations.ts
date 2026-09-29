@@ -10,14 +10,14 @@ export interface RetrievedSource {
   page?: number
 }
 
-const CITATIONS_REGEX = /<!--CITATIONS:(\[.*?\])-->\s*$/
+const CITATIONS_REGEX = /<!--\s*CITATIONS\s*:\s*(\[[\s\S]*?\])\s*-->\s*$/i
 
 /**
  * Parse model citation block and strip it from visible content.
  * Format: <!--CITATIONS:["file.txt:0","other.pdf:3"]-->
  *
- * Trust policy: only return sources the model explicitly cited.
- * Missing/malformed blocks yield empty citations (no silent top-N fallback).
+ * Trust policy: prefer model-explicit citations. Callers may soft-fallback
+ * via fallbackCitationsFromSources when the block is missing/empty.
  */
 export function parseCitationsFromResponse(
   text: string,
@@ -35,6 +35,7 @@ export function parseCitationsFromResponse(
     const citedSources: CitedSource[] = []
 
     for (const ref of refs) {
+      if (typeof ref !== 'string') continue
       const colonIdx = ref.lastIndexOf(':')
       if (colonIdx === -1) continue
       const filename = ref.slice(0, colonIdx)
@@ -47,7 +48,7 @@ export function parseCitationsFromResponse(
         ) ?? availableSources.find((s) => s.filename === filename)
       if (found) {
         citedSources.push({
-          filename,
+          filename: found.filename,
           chunk_index: found.chunk_index,
           document_id: found.document_id,
           file_type: found.file_type,

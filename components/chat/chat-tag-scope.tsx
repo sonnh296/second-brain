@@ -10,6 +10,8 @@ type ChatTagScopeProps = {
   readonly selectedTagIds: string[]
   readonly onChange: (tagIds: string[]) => void
   readonly disabled?: boolean
+  /** Compact collapsible bar (mobile). Default: always-open panel. */
+  readonly collapsible?: boolean
 }
 
 export function ChatTagScope({
@@ -17,9 +19,10 @@ export function ChatTagScope({
   selectedTagIds,
   onChange,
   disabled = false,
+  collapsible = false,
 }: ChatTagScopeProps) {
   const t = useTranslations('chat')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(!collapsible)
   const selected = new Set(selectedTagIds)
   const selectedTags = tags.filter((tag) => selected.has(tag.id))
 
@@ -38,6 +41,65 @@ export function ChatTagScope({
       : selectedTags.length <= 2
         ? selectedTags.map((tag) => tag.name).join(', ')
         : t('scopeActive', { count: selectedTags.length })
+
+  const body =
+    tags.length === 0 ? (
+      <p className="text-xs text-muted-foreground px-0.5">{t('scopeNoTags')}</p>
+    ) : (
+      <>
+        <div className="flex items-center justify-end gap-2">
+          {selectedTagIds.length > 0 && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange([])}
+              className="text-xs text-primary hover:underline disabled:opacity-50"
+            >
+              {t('scopeAll')}
+            </button>
+          )}
+        </div>
+        <div
+          className={`flex flex-wrap gap-1.5 overflow-y-auto ${
+            collapsible ? 'max-h-20' : 'max-h-40'
+          }`}
+        >
+          {tags.map((tag) => {
+            const active = selected.has(tag.id)
+            return (
+              <button
+                key={tag.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => toggle(tag.id)}
+                aria-pressed={active}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+                  active
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-input bg-background text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: tag.color }}
+                  aria-hidden
+                />
+                <span className="truncate max-w-32">{tag.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      </>
+    )
+
+  if (!collapsible) {
+    return (
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <p className="text-xs font-medium text-foreground px-0.5">{t('scopeByTag')}</p>
+        {body}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
@@ -72,54 +134,7 @@ export function ChatTagScope({
         )}
       </button>
 
-      {expanded && (
-        <>
-          {tags.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-0.5">{t('scopeNoTags')}</p>
-          ) : (
-            <>
-              <div className="flex items-center justify-end gap-2">
-                {selectedTagIds.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onChange([])}
-                    className="text-xs text-primary hover:underline disabled:opacity-50"
-                  >
-                    {t('scopeAll')}
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
-                {tags.map((tag) => {
-                  const active = selected.has(tag.id)
-                  return (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => toggle(tag.id)}
-                      aria-pressed={active}
-                      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
-                        active
-                          ? 'border-primary bg-primary/10 text-foreground'
-                          : 'border-input bg-background text-muted-foreground hover:bg-muted'
-                      }`}
-                    >
-                      <span
-                        className="h-2 w-2 rounded-full shrink-0"
-                        style={{ backgroundColor: tag.color }}
-                        aria-hidden
-                      />
-                      <span className="truncate max-w-32">{tag.name}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </>
-      )}
+      {expanded && body}
     </div>
   )
 }

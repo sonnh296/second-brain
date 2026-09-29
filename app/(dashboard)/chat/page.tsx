@@ -44,6 +44,7 @@ const MODEL_STORAGE_KEY = 'second-brain-chat-model'
 const CHAT_MODE_STORAGE_KEY = 'second-brain-chat-mode'
 const CHAT_TAG_SCOPE_STORAGE_KEY = 'second-brain-chat-tag-ids'
 const CHAT_FOLDER_SCOPE_STORAGE_KEY = 'second-brain-chat-folder-id'
+const SESSIONS_PAGE_SIZE = 20
 
 export default function ChatPage() {
   const t = useTranslations('chat')
@@ -52,6 +53,11 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
   const [loadingSessions, setLoadingSessions] = useState(true)
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false)
+  const [hasMoreSessions, setHasMoreSessions] = useState(false)
+  const [sessionSearch, setSessionSearch] = useState('')
+  const [sessionSearchDebounced, setSessionSearchDebounced] = useState('')
+  const sessionsFetchIdRef = useRef(0)
   const [selectedModel, setSelectedModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL)
   const [chatMode, setChatMode] = useState<ChatMode>('knowledge')
   const [tags, setTags] = useState<Tag[]>([])
@@ -161,15 +167,22 @@ export default function ChatPage() {
         ? ((await sharedRes.json()) as {
             id: string
             name: string
+            parent_id?: string | null
             shared_by?: { username: string | null }
           }[])
         : []
       if (cancelled) return
       const options: ChatFolderOption[] = [
-        ...owned.map((f) => ({ id: f.id, name: f.name, shared: false })),
+        ...owned.map((f) => ({
+          id: f.id,
+          name: f.name,
+          parent_id: f.parent_id,
+          shared: false,
+        })),
         ...shared.map((f) => ({
           id: f.id,
           name: f.name,
+          parent_id: f.parent_id ?? null,
           shared: true,
           sharedBy: f.shared_by?.username ?? null,
         })),
@@ -260,21 +273,62 @@ export default function ChatPage() {
   }, [streamData])
 
   useEffect(() => {
-    fetchSessions()
-  }, [])
+    const timer = window.setTimeout(() => {
+      setSessionSearchDebounced(sessionSearch.trim())
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [sessionSearch])
+
+  useEffect(() => {
+    void fetchSessions({ reset: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when search changes
+  }, [sessionSearchDebounced])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, status])
 
-  async function fetchSessions() {
-    setLoadingSessions(true)
-    const res = await fetch('/api/sessions')
-    if (res.ok) {
-      const data = await res.json()
-      setSessions(data)
+  async function fetchSessions(opts?: { reset?: boolean; offset?: number }) {
+    const reset = opts?.reset ?? true
+    const fetchId = ++sessionsFetchIdRef.current
+    const offset = reset ? 0 : (opts?.offset ?? sessions.length)
+    if (reset) {
+      setLoadingSessions(true)
+    } else {
+      setLoadingMoreSessions(true)
     }
-    setLoadingSessions(false)
+
+    const params = new URLSearchParams({
+      limit: String(SESSIONS_PAGE_SIZE),
+      offset: String(offset),
+    })
+    if (sessionSearchDebounced) {
+      params.set('q', sessionSearchDebounced)
+    }
+
+    try {
+      const res = await fetch(`/api/sessions?${params}`)
+      if (!res.ok || fetchId !== sessionsFetchIdRef.current) return
+      const data = (await res.json()) as {
+        sessions?: ChatSession[]
+        has_more?: boolean
+      }
+      const next = data.sessions ?? []
+      setHasMoreSessions(Boolean(data.has_more))
+      setSessions((prev) =>
+        reset ? next : [...prev, ...next.filter((s) => !prev.some((p) => p.id === s.id))]
+      )
+    } finally {
+      if (fetchId === sessionsFetchIdRef.current) {
+        setLoadingSessions(false)
+        setLoadingMoreSessions(false)
+      }
+    }
+  }
+
+  function loadMoreSessions() {
+    if (loadingSessions || loadingMoreSessions || !hasMoreSessions) return
+    void fetchSessions({ reset: false, offset: sessions.length })
   }
 
   async function loadSession(session: ChatSession) {
@@ -567,7 +621,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="relative flex h-full max-w-6xl mx-auto">
+    <div className="relative flex h-full w-full">
       {confirmDialog}
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
@@ -579,12 +633,12 @@ export default function ChatPage() {
         />
       )}
 
-      {/* Sidebar — drawer on mobile, fixed on md+ */}
+      {/* Sidebar — drawer on mobile, flush left on md+ */}
       <aside
         className={`
           fixed inset-y-0 left-0 z-40 w-[min(18rem,85vw)] flex flex-col border-r bg-background
           transition-transform duration-200 ease-out
-          md:static md:z-auto md:w-60 md:shrink-0 md:translate-x-0 md:bg-muted/20
+          md:static md:z-auto md:w-64 md:shrink-0 md:translate-x-0 md:bg-muted/30
           ${sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full md:translate-x-0'}
         `}
       >
@@ -601,13 +655,24 @@ export default function ChatPage() {
             ✕
           </button>
         </div>
+        <div className="shrink-0 px-3 pb-2">
+          <Input
+            value={sessionSearch}
+            onChange={(e) => setSessionSearch(e.target.value)}
+            placeholder={t('searchChats')}
+            className="h-8 text-xs"
+            aria-label={t('searchChats')}
+          />
+        </div>
         <Separator />
         <div className="flex-1 min-h-0 overflow-y-auto p-2">
           <div className="space-y-1">
             {loadingSessions ? (
               <p className="text-xs text-muted-foreground px-2">Đang tải...</p>
             ) : sessions.length === 0 ? (
-              <p className="text-xs text-muted-foreground px-2">Chưa có cuộc trò chuyện</p>
+              <p className="text-xs text-muted-foreground px-2">
+                {sessionSearchDebounced ? t('noChatMatches') : 'Chưa có cuộc trò chuyện'}
+              </p>
             ) : (
               sessions.map((s) => (
                 <div
@@ -660,6 +725,16 @@ export default function ChatPage() {
                   )}
                 </div>
               ))
+            )}
+            {hasMoreSessions && !loadingSessions && (
+              <button
+                type="button"
+                disabled={loadingMoreSessions}
+                onClick={loadMoreSessions}
+                className="w-full rounded-md px-2 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {loadingMoreSessions ? t('loadingMoreChats') : t('loadMoreChats')}
+              </button>
             )}
           </div>
         </div>
@@ -739,13 +814,15 @@ export default function ChatPage() {
               </div>
             </div>
 
+            {/* Mobile: folder/tag under toolbar; desktop uses right panel */}
             {chatMode === 'knowledge' && (
-              <div className="shrink-0 px-3 sm:px-4 py-1.5 border-b bg-background/80 space-y-1.5">
+              <div className="md:hidden shrink-0 px-3 sm:px-4 py-1.5 border-b bg-background/80 space-y-1.5">
                 <ChatFolderScope
                   folders={folderOptions}
                   selectedFolderId={selectedFolderId}
                   onChange={onFolderScopeChange}
                   disabled={isLoading}
+                  collapsible
                 />
                 {!selectedFolderIsShared && (
                   <ChatTagScope
@@ -753,6 +830,7 @@ export default function ChatPage() {
                     selectedTagIds={selectedTagIds}
                     onChange={onTagScopeChange}
                     disabled={isLoading}
+                    collapsible
                   />
                 )}
               </div>
@@ -971,6 +1049,28 @@ export default function ChatPage() {
           </>
         )}
       </div>
+      {/* Desktop right panel — folder tree + tags */}
+      {chatMode === 'knowledge' && (
+        <aside className="hidden md:flex w-64 lg:w-72 shrink-0 flex-col border-l bg-muted/20 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+            <ChatFolderScope
+              folders={folderOptions}
+              selectedFolderId={selectedFolderId}
+              onChange={onFolderScopeChange}
+              disabled={isLoading}
+            />
+            {!selectedFolderIsShared && (
+              <ChatTagScope
+                tags={tags}
+                selectedTagIds={selectedTagIds}
+                onChange={onTagScopeChange}
+                disabled={isLoading}
+              />
+            )}
+          </div>
+        </aside>
+      )}
+
       <ImagePreviewModal
         key={previewModal.open ? previewModal.src : 'closed'}
         modal={previewModal}

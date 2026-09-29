@@ -1,0 +1,303 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useTranslations, useLocale } from 'next-intl'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Dialog } from '@/components/ui/dialog'
+import { useConfirm } from '@/components/ui/confirm-dialog'
+import { dateLocaleTag } from '@/i18n/config'
+
+interface AdminUser {
+  id: string
+  username: string
+  role: 'user' | 'admin'
+  created_at: string
+  disabled_at: string | null
+}
+
+type UserFormMode = 'create' | 'edit'
+
+export function AdminUsersPanel() {
+  const t = useTranslations('admin')
+  const tc = useTranslations('common')
+  const locale = useLocale()
+  const { confirm, dialog: confirmDialog } = useConfirm()
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [formOpen, setFormOpen] = useState(false)
+  const [formMode, setFormMode] = useState<UserFormMode>('create')
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState<'user' | 'admin'>('user')
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [actionError, setActionError] = useState('')
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    const res = await fetch('/api/admin/users')
+    if (res.ok) setUsers(await res.json())
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void fetchUsers()
+  }, [fetchUsers])
+
+  function openCreate() {
+    setFormMode('create')
+    setEditingUser(null)
+    setUsername('')
+    setPassword('')
+    setRole('user')
+    setFormError('')
+    setFormOpen(true)
+  }
+
+  function openEdit(u: AdminUser) {
+    setFormMode('edit')
+    setEditingUser(u)
+    setUsername(u.username)
+    setPassword('')
+    setRole(u.role)
+    setFormError('')
+    setFormOpen(true)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setFormError('')
+
+    if (formMode === 'create') {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, role }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setFormError(data.error ?? tc('error'))
+        setSaving(false)
+        return
+      }
+    } else if (editingUser) {
+      const body: { role?: 'user' | 'admin'; password?: string } = {}
+      if (role !== editingUser.role) body.role = role
+      if (password.trim()) body.password = password
+      if (Object.keys(body).length === 0) {
+        setFormOpen(false)
+        setSaving(false)
+        return
+      }
+      const res = await fetch(`/api/admin/users/${editingUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setFormError(data.error ?? tc('error'))
+        setSaving(false)
+        return
+      }
+    }
+
+    setSaving(false)
+    setFormOpen(false)
+    await fetchUsers()
+  }
+
+  async function toggleDisabled(u: AdminUser) {
+    const willDisable = !u.disabled_at
+    const ok = await confirm({
+      title: willDisable ? t('disableTitle') : t('enableTitle'),
+      description: willDisable
+        ? t('disableDesc', { username: u.username })
+        : t('enableDesc', { username: u.username }),
+      confirmLabel: willDisable ? t('disable') : t('enable'),
+      cancelLabel: tc('cancel'),
+      variant: willDisable ? 'destructive' : 'default',
+    })
+    if (!ok) return
+
+    setActionError('')
+    const res = await fetch(`/api/admin/users/${u.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disabled: willDisable }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      setActionError(data.error ?? tc('error'))
+      return
+    }
+    await fetchUsers()
+  }
+
+  const dateLocale = dateLocaleTag(locale)
+
+  return (
+    <div className="space-y-6">
+      {confirmDialog}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">{t('usersTitle')}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t('usersSubtitle')}</p>
+        </div>
+        <Button type="button" onClick={openCreate}>
+          {t('addUser')}
+        </Button>
+      </div>
+
+      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t('userList')}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">{tc('loading')}</p>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('noUsers')}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">{t('colUsername')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colRole')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colStatus')}</th>
+                    <th className="pb-2 pr-4 font-medium">{t('colCreated')}</th>
+                    <th className="pb-2 font-medium">{t('colActions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u) => (
+                    <tr key={u.id} className="border-b last:border-0">
+                      <td className="py-2.5 pr-4 font-medium">{u.username}</td>
+                      <td className="py-2.5 pr-4">
+                        <Badge variant={u.role === 'admin' ? 'default' : 'secondary'}>
+                          {u.role === 'admin' ? 'Admin' : 'User'}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        <Badge variant={u.disabled_at ? 'destructive' : 'secondary'}>
+                          {u.disabled_at ? t('disabled') : t('active')}
+                        </Badge>
+                      </td>
+                      <td className="py-2.5 pr-4 text-muted-foreground">
+                        {new Date(u.created_at).toLocaleString(dateLocale)}
+                      </td>
+                      <td className="py-2.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => openEdit(u)}
+                          >
+                            {t('editUser')}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={u.disabled_at ? 'default' : 'destructive'}
+                            className="h-7 text-xs"
+                            onClick={() => void toggleDisabled(u)}
+                          >
+                            {u.disabled_at ? t('enable') : t('disable')}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={formOpen}
+        title={
+          formMode === 'create'
+            ? t('createTitle')
+            : t('editTitle', { username: editingUser?.username ?? '' })
+        }
+        onClose={() => !saving && setFormOpen(false)}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={saving}
+              onClick={() => setFormOpen(false)}
+            >
+              {tc('cancel')}
+            </Button>
+            <Button type="submit" form="admin-user-form" size="sm" disabled={saving}>
+              {saving
+                ? t('saving')
+                : formMode === 'create'
+                  ? t('createAccount')
+                  : t('saveChanges')}
+            </Button>
+          </>
+        }
+      >
+        <form id="admin-user-form" onSubmit={handleSubmit} className="space-y-4">
+          {formMode === 'create' && (
+            <div className="space-y-2">
+              <Label htmlFor="new-username">{t('username')}</Label>
+              <Input
+                id="new-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder={t('usernamePlaceholder')}
+                pattern="[a-z0-9_]{3,32}"
+                required
+              />
+              <p className="text-xs text-muted-foreground">{t('usernameHint')}</p>
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="new-password">
+              {formMode === 'create' ? t('password') : t('passwordOptional')}
+            </Label>
+            <Input
+              id="new-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              minLength={formMode === 'create' ? 6 : undefined}
+              required={formMode === 'create'}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-role">{t('role')}</Label>
+            <select
+              id="new-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'user' | 'admin')}
+              className="w-full text-sm rounded-md border border-input bg-background px-3 py-2"
+            >
+              <option value="user">{t('roleUser')}</option>
+              <option value="admin">{t('roleAdmin')}</option>
+            </select>
+          </div>
+          {formError && <p className="text-sm text-destructive">{formError}</p>}
+        </form>
+      </Dialog>
+    </div>
+  )
+}
