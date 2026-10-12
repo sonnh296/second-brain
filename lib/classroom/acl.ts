@@ -73,8 +73,8 @@ export function isAclError(
   return 'error' in v
 }
 
-export const CLASSROOM_ASSIGNMENT_MAX_BYTES = 100 * 1024 * 1024 // 100MB
-export const CLASSROOM_DOC_MAX_BYTES = 100 * 1024 * 1024
+export const CLASSROOM_ASSIGNMENT_MAX_BYTES = 500 * 1024 * 1024 // 500MB
+export const CLASSROOM_DOC_MAX_BYTES = 500 * 1024 * 1024
 
 export function classroomR2Key(
   classroomId: string,

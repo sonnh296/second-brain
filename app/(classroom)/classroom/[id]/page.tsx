@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Folder, MoreVertical, Plus, Trash2 } from 'lucide-react'
+import { BookOpen, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { ClassroomLoading, ClassroomTileSkeleton } from '@/components/classroom/classroom-loading'
 import { ClassroomBreadcrumb } from '@/components/classroom/classroom-breadcrumb'
 import { ClassroomModal } from '@/components/classroom/classroom-modal'
@@ -20,7 +20,7 @@ type Lesson = {
 }
 
 const TILE =
-  'w-[6.25rem] sm:w-[6.5rem] flex flex-col items-center text-center gap-1 rounded-lg border p-2 hover:bg-muted/50 transition'
+  'w-[6.25rem] sm:w-[6.5rem] min-h-[7.5rem] flex flex-col items-center text-center gap-1 rounded-lg border p-2 hover:bg-muted/50 transition'
 
 function nextLessonTitle(lessons: Lesson[]) {
   const nextIndex = lessons.reduce((max, l) => Math.max(max, l.lesson_index), 0) + 1
@@ -32,16 +32,19 @@ function LessonTile({
   classroomId,
   role,
   incomplete,
-  onDeleted,
+  onChanged,
 }: {
   lesson: Lesson
   classroomId: string
   role: 'teacher' | 'student'
   incomplete: number
-  onDeleted: () => void
+  onChanged: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameTitle, setRenameTitle] = useState(lesson.title)
+  const [renameError, setRenameError] = useState<string | null>(null)
   const { confirm, dialog } = useConfirm()
 
   async function handleDelete(e: React.MouseEvent) {
@@ -60,7 +63,43 @@ function LessonTile({
       method: 'DELETE',
     })
     setBusy(false)
-    if (res.ok) onDeleted()
+    if (res.ok) onChanged()
+  }
+
+  function openRename(e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenuOpen(false)
+    setRenameTitle(lesson.title)
+    setRenameError(null)
+    setRenameOpen(true)
+  }
+
+  async function saveRename() {
+    const title = renameTitle.trim()
+    if (!title) {
+      setRenameError('Nhập tên buổi học')
+      return
+    }
+    if (title === lesson.title) {
+      setRenameOpen(false)
+      return
+    }
+    setBusy(true)
+    setRenameError(null)
+    const res = await fetch(`/api/classroom/${classroomId}/lessons/${lesson.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    setBusy(false)
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      setRenameError(d.error ?? 'Không đổi được tên')
+      return
+    }
+    setRenameOpen(false)
+    onChanged()
   }
 
   return (
@@ -69,13 +108,15 @@ function LessonTile({
         href={`/classroom/${classroomId}/lessons/${lesson.id}`}
         className={`${TILE} ${busy ? 'opacity-50 pointer-events-none' : ''}`}
       >
-        <Folder className="h-7 w-7 text-sky-600" />
-        <p className="text-[11px] font-medium line-clamp-2 w-full leading-snug">{lesson.title}</p>
-        {role === 'student' && incomplete > 0 && (
-          <p className="text-[10px] text-amber-700 leading-tight">
-            {incomplete} bài tập chưa hoàn thành
-          </p>
-        )}
+        <BookOpen className="h-7 w-7 text-sky-600 shrink-0" />
+        <p className="text-[11px] font-medium line-clamp-2 w-full leading-snug flex-1">
+          {lesson.title}
+        </p>
+        <p className="text-[10px] leading-tight min-h-5 w-full text-amber-700">
+          {role === 'student' && incomplete > 0
+            ? `${incomplete} bài tập chưa hoàn thành`
+            : '\u00a0'}
+        </p>
       </Link>
 
       {role === 'teacher' && (
@@ -99,6 +140,15 @@ function LessonTile({
             >
               <button
                 type="button"
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted cursor-pointer flex items-center gap-1.5"
+                onClick={openRename}
+                disabled={busy}
+              >
+                <Pencil className="h-3 w-3" />
+                Đổi tên
+              </button>
+              <button
+                type="button"
                 className="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted cursor-pointer flex items-center gap-1.5"
                 onClick={(e) => void handleDelete(e)}
                 disabled={busy}
@@ -110,6 +160,50 @@ function LessonTile({
           )}
         </>
       )}
+
+      <ClassroomModal
+        open={renameOpen}
+        title="Đổi tên buổi học"
+        onClose={() => {
+          if (!busy) setRenameOpen(false)
+        }}
+        busy={busy}
+        footer={
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setRenameOpen(false)}
+              disabled={busy}
+            >
+              Hủy
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={busy || !renameTitle.trim()}
+              onClick={() => void saveRename()}
+            >
+              {busy ? 'Đang lưu...' : 'Lưu'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor={`rename-lesson-${lesson.id}`}>Tên buổi</Label>
+          <Input
+            id={`rename-lesson-${lesson.id}`}
+            value={renameTitle}
+            onChange={(e) => setRenameTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void saveRename()}
+            autoFocus
+            disabled={busy}
+            maxLength={200}
+          />
+        </div>
+        {renameError && <p className="text-sm text-destructive">{renameError}</p>}
+      </ClassroomModal>
       {dialog}
     </div>
   )
@@ -210,8 +304,9 @@ export default function ClassroomDetailPage() {
             onClick={openAddModal}
             className={`${TILE} border-dashed text-muted-foreground hover:text-foreground disabled:opacity-50 cursor-pointer`}
           >
-            <Plus className="h-7 w-7" />
-            <p className="text-[11px] font-medium">Thêm buổi</p>
+            <Plus className="h-7 w-7 shrink-0" />
+            <p className="text-[11px] font-medium flex-1">Thêm buổi</p>
+            <p className="text-[10px] min-h-5 w-full">{'\u00a0'}</p>
           </button>
         )}
         {lessons.map((l) => (
@@ -221,7 +316,7 @@ export default function ClassroomDetailPage() {
             classroomId={id}
             role={role}
             incomplete={l.incomplete_assignments ?? 0}
-            onDeleted={() => void load()}
+            onChanged={() => void load()}
           />
         ))}
       </div>

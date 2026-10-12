@@ -11,13 +11,8 @@ import { DocumentTagEditor } from '@/components/documents/tag-manager'
 import { ClassroomModal } from '@/components/classroom/classroom-modal'
 import { cn } from '@/lib/utils'
 import { MAX_DOCUMENT_DESCRIPTION_LENGTH } from '@/lib/upload/file-types'
+import { filenameStem, splitFilename } from '@/lib/upload/filename'
 import type { Document, Tag } from '@/lib/db/types'
-
-function splitFilename(filename: string): { base: string; ext: string } {
-  const i = filename.lastIndexOf('.')
-  if (i <= 0) return { base: filename, ext: '' }
-  return { base: filename.slice(0, i), ext: filename.slice(i) }
-}
 
 type UploadTab = 'file' | 'meta'
 
@@ -102,8 +97,11 @@ export function UploadModal({
 
   if (!open) return null
 
-  const displayFilename = filename.trim() || (isReupload ? reuploadDoc?.filename ?? '' : '')
-  const { base: nameBase, ext: nameExt } = splitFilename(displayFilename)
+  const sourceName = selectedFile?.name ?? (isReupload ? reuploadDoc?.filename ?? '' : '')
+  const lockedExt = sourceName ? splitFilename(sourceName).ext : ''
+  const displayFilename = filename || (isReupload ? reuploadDoc?.filename ?? '' : '')
+  const nameBase = filenameStem(displayFilename, lockedExt)
+  const nameExt = lockedExt
   const canRename = Boolean(selectedFile || (isReupload && displayFilename))
   const canSave = Boolean(selectedFile && nameBase.trim())
 

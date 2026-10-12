@@ -89,7 +89,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'filename, size, folder_id required' }, { status: 400 })
   }
   if (size > CLASSROOM_DOC_MAX_BYTES) {
-    return NextResponse.json({ error: 'File too large (max 100MB)' }, { status: 413 })
+    return NextResponse.json(
+      { error: `File too large (max ${Math.round(CLASSROOM_DOC_MAX_BYTES / 1024 / 1024)}MB)` },
+      { status: 413 }
+    )
   }
 
   const { data: folder } = await supabase

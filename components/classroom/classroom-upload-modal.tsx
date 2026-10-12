@@ -8,12 +8,7 @@ import { FileDropzone } from '@/components/documents/file-dropzone'
 import { ClassroomModal } from '@/components/classroom/classroom-modal'
 import { cn } from '@/lib/utils'
 import { putToR2WithProgress } from '@/lib/upload/put-with-progress'
-
-function splitFilename(filename: string): { base: string; ext: string } {
-  const i = filename.lastIndexOf('.')
-  if (i <= 0) return { base: filename, ext: '' }
-  return { base: filename.slice(0, i), ext: filename.slice(i) }
-}
+import { filenameStem, splitFilename } from '@/lib/upload/filename'
 
 export function ClassroomUploadModal({
   open,
@@ -80,7 +75,9 @@ export function ClassroomUploadModal({
     setError('')
   }
 
-  const { base: nameBase, ext: nameExt } = splitFilename(filename)
+  const lockedExt = selectedFile ? splitFilename(selectedFile.name).ext : ''
+  const nameBase = filenameStem(filename, lockedExt)
+  const nameExt = lockedExt
   const canSave = Boolean(selectedFile && nameBase.trim() && folderId)
 
   async function submit() {

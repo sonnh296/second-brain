@@ -145,7 +145,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'filename and size required' }, { status: 400 })
   }
   if (size > maxBytes) {
-    return NextResponse.json({ error: 'File too large (max 100MB)' }, { status: 413 })
+    return NextResponse.json(
+      { error: `File too large (max ${Math.round(maxBytes / 1024 / 1024)}MB)` },
+      { status: 413 }
+    )
   }
 
   const filename = sanitizeFilename(body.filename)
@@ -185,7 +188,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   }
 
   let body: {
-    action?: 'submit' | 'grade' | 'save_content' | 'submit_content' | 'update'
+    action?: 'submit' | 'grade' | 'save_content' | 'submit_content' | 'update' | 'clear_files'
     files?: { file_id: string; r2_key: string; filename: string; file_type: string; size: number }[]
     submission_id?: string
     score?: number
@@ -291,6 +294,43 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     return NextResponse.json(data)
   }
 
+  if (body.action === 'clear_files') {
+    if (membership.role !== 'student') {
+      return NextResponse.json({ error: 'Students only' }, { status: 403 })
+    }
+
+    const { data: existing } = await supabase
+      .from('assignment_submissions')
+      .select('id, status, content_md, files')
+      .eq('assignment_id', assignmentId)
+      .eq('student_id', user.id)
+      .maybeSingle()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'No submission' }, { status: 404 })
+    }
+
+    const wasGraded = existing.status === 'graded'
+    const { data, error } = await supabase
+      .from('assignment_submissions')
+      .update({
+        files: [],
+        status: wasGraded ? 'draft' : existing.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+      .select('*')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    if (wasGraded && data?.id) {
+      await supabase.from('grades').delete().eq('submission_id', data.id)
+    }
+
+    return NextResponse.json(data)
+  }
+
   if (body.action === 'submit') {
     if (membership.role !== 'student') {
       return NextResponse.json({ error: 'Students only' }, { status: 403 })
@@ -333,7 +373,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         return NextResponse.json({ error: `Missing upload: ${f.filename}` }, { status: 400 })
       }
       if (head.size > maxBytes) {
-        return NextResponse.json({ error: 'File too large (max 100MB)' }, { status: 413 })
+        return NextResponse.json(
+          { error: `File too large (max ${Math.round(maxBytes / 1024 / 1024)}MB)` },
+          { status: 413 }
+        )
       }
       normalized.push({
         ...f,

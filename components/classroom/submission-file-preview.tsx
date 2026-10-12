@@ -156,11 +156,16 @@ export function SubmissionFilePreviewList({
   files,
   viewerHref,
   className,
+  onRemove,
+  removing,
 }: {
   files: SubmissionFileMeta[]
   /** Build stream URL for a file (inline by default). */
   viewerHref: (file: SubmissionFileMeta) => string | null
   className?: string
+  /** When set, shows a remove control (student editing). */
+  onRemove?: (file: SubmissionFileMeta) => void
+  removing?: boolean
 }) {
   if (files.length === 0) return null
 
@@ -187,6 +192,16 @@ export function SubmissionFilePreviewList({
                 >
                   Tải về
                 </a>
+              )}
+              {onRemove && (
+                <button
+                  type="button"
+                  disabled={removing}
+                  onClick={() => onRemove(f)}
+                  className="shrink-0 text-xs text-destructive hover:underline disabled:opacity-50 cursor-pointer"
+                >
+                  {removing ? 'Đang xóa...' : 'Xóa'}
+                </button>
               )}
             </div>
             {viewerUrl ? (

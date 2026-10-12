@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Paperclip } from 'lucide-react'
 import { putToR2WithProgress } from '@/lib/upload/put-with-progress'
+import { CLASSROOM_ASSIGNMENT_MAX_BYTES } from '@/lib/classroom/acl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -17,6 +19,7 @@ import {
   type AssignmentComment,
 } from '@/components/classroom/assignment-editor'
 import { SubmissionFilePreviewList } from '@/components/classroom/submission-file-preview'
+import { useConfirm } from '@/components/ui/confirm-dialog'
 
 // type Rubric = { id: string; name: string; criteria: { items?: { id: string; label: string }[] } }
 
@@ -117,7 +120,9 @@ export default function AssignmentDetailPage() {
   const [gradeComment, setGradeComment] = useState('')
   const [gradeEditing, setGradeEditing] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
+  const [removingFile, setRemovingFile] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const { confirm, dialog: confirmDialog } = useConfirm()
   // const [aiBusy, setAiBusy] = useState(false)
   // const [pendingAiSuggestion, setPendingAiSuggestion] = useState<unknown>(null)
   const [saveBusy, setSaveBusy] = useState(false)
@@ -307,8 +312,10 @@ export default function AssignmentDetailPage() {
 
   async function uploadSubmission(file: File) {
     setMsg(null)
-    if (file.size > 100 * 1024 * 1024) {
-      setMsg('File quá lớn (tối đa 100MB)')
+    if (file.size > CLASSROOM_ASSIGNMENT_MAX_BYTES) {
+      setMsg(
+        `File quá lớn (tối đa ${Math.round(CLASSROOM_ASSIGNMENT_MAX_BYTES / 1024 / 1024)}MB)`
+      )
       return
     }
     setProgress(0)
@@ -349,6 +356,33 @@ export default function AssignmentDetailPage() {
       setMsg(e instanceof Error ? e.message : 'Lỗi')
     } finally {
       setProgress(null)
+    }
+  }
+
+  async function clearSubmissionFiles() {
+    const ok = await confirm({
+      title: 'Xóa file đính kèm?',
+      description: 'Bạn có thể đính kèm file mới sau khi xóa.',
+      confirmLabel: 'Xóa file',
+    })
+    if (!ok) return
+    setRemovingFile(true)
+    setMsg(null)
+    try {
+      const res = await fetch(`/api/classroom/${id}/assignments/${assignmentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_files' }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error ?? 'Không xóa được file')
+      }
+      await load()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Lỗi')
+    } finally {
+      setRemovingFile(false)
     }
   }
 
@@ -840,10 +874,12 @@ export default function AssignmentDetailPage() {
                 viewerHref={(f) =>
                   f.file_id ? downloadHref(id, assignmentId, f.file_id) : null
                 }
+                onRemove={studentEditing ? () => void clearSubmissionFiles() : undefined}
+                removing={removingFile}
               />
             )}
             {studentEditing && (
-              <div>
+              <div className="rounded-xl border-2 border-dashed border-sky-500/50 bg-sky-50/80 dark:bg-sky-950/30 p-4 space-y-2">
                 <input
                   ref={fileRef}
                   type="file"
@@ -856,13 +892,22 @@ export default function AssignmentDetailPage() {
                 />
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={progress !== null}
+                  className="w-full sm:w-auto gap-2"
+                  disabled={progress !== null || removingFile}
                   onClick={() => fileRef.current?.click()}
                 >
-                  {progress !== null ? `Đang tải ${progress}%` : 'Đính kèm file (≤100MB)'}
+                  <Paperclip className="h-4 w-4" />
+                  {progress !== null
+                    ? `Đang tải ${progress}%`
+                    : (submission?.files ?? []).length > 0
+                      ? 'Thay file đính kèm'
+                      : 'Đính kèm file'}
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  {(submission?.files ?? []).length > 0
+                    ? 'File mới sẽ thay thế file hiện tại. Có thể xóa file cũ bằng nút Xóa phía trên.'
+                    : `Đính kèm bài làm (tối đa ${Math.round(CLASSROOM_ASSIGNMENT_MAX_BYTES / 1024 / 1024)}MB).`}
+                </p>
               </div>
             )}
           </div>
@@ -879,6 +924,7 @@ export default function AssignmentDetailPage() {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   )
 }

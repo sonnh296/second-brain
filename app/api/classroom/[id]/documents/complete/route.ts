@@ -56,7 +56,10 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   if (head.size > CLASSROOM_DOC_MAX_BYTES) {
     await deleteObject(doc.r2_key).catch(() => {})
-    return NextResponse.json({ error: 'File too large (max 100MB)' }, { status: 413 })
+    return NextResponse.json(
+      { error: `File too large (max ${Math.round(CLASSROOM_DOC_MAX_BYTES / 1024 / 1024)}MB)` },
+      { status: 413 }
+    )
   }
 
   const header = await getObjectHeaderBytes(doc.r2_key)
