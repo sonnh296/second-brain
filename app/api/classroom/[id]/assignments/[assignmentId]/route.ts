@@ -140,7 +140,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
 
   const size = Number(body.size)
-  const maxBytes = assignment.max_file_bytes ?? CLASSROOM_ASSIGNMENT_MAX_BYTES
+  // Floor at current constant so older rows still on 100MB default get the raised cap.
+  const maxBytes = Math.max(
+    Number(assignment.max_file_bytes) || 0,
+    CLASSROOM_ASSIGNMENT_MAX_BYTES
+  )
   if (!body.filename || !Number.isFinite(size) || size <= 0) {
     return NextResponse.json({ error: 'filename and size required' }, { status: 400 })
   }
@@ -359,7 +363,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: 'files required' }, { status: 400 })
     }
 
-    const maxBytes = assignment.max_file_bytes ?? CLASSROOM_ASSIGNMENT_MAX_BYTES
+    const maxBytes = Math.max(
+      Number(assignment.max_file_bytes) || 0,
+      CLASSROOM_ASSIGNMENT_MAX_BYTES
+    )
     const normalized: typeof files = []
     for (const f of files) {
       if (!f.file_id || !f.r2_key || !f.filename) {
