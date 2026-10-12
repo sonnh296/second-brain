@@ -7,6 +7,7 @@ import { createServerSupabaseClient } from '@/lib/db/server'
 import {
   CLASSROOM_ASSIGNMENT_MAX_BYTES,
   classroomSubmissionR2Key,
+  formatUploadLimit,
   isAclError,
   isOwnedSubmissionR2Key,
   requireMember,
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   if (size > maxBytes) {
     return NextResponse.json(
-      { error: `File too large (max ${Math.round(maxBytes / 1024 / 1024)}MB)` },
+      { error: `File too large (max ${formatUploadLimit(maxBytes)})` },
       { status: 413 }
     )
   }
@@ -381,7 +382,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       }
       if (head.size > maxBytes) {
         return NextResponse.json(
-          { error: `File too large (max ${Math.round(maxBytes / 1024 / 1024)}MB)` },
+          { error: `File too large (max ${formatUploadLimit(maxBytes)})` },
           { status: 413 }
         )
       }

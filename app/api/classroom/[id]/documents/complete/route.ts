@@ -3,7 +3,12 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
-import { isAclError, requireTeacher, CLASSROOM_DOC_MAX_BYTES } from '@/lib/classroom/acl'
+import {
+  isAclError,
+  requireTeacher,
+  CLASSROOM_DOC_MAX_BYTES,
+  formatUploadLimit,
+} from '@/lib/classroom/acl'
 import { headObject, getObjectHeaderBytes, deleteObject } from '@/lib/storage'
 import { enqueueIngestionJob, getIngestionQueue, ingestionJobId } from '@/lib/queue'
 import { detectAndValidateFileType } from '@/lib/upload/validate-file'
@@ -57,7 +62,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (head.size > CLASSROOM_DOC_MAX_BYTES) {
     await deleteObject(doc.r2_key).catch(() => {})
     return NextResponse.json(
-      { error: `File too large (max ${Math.round(CLASSROOM_DOC_MAX_BYTES / 1024 / 1024)}MB)` },
+      { error: `File too large (max ${formatUploadLimit(CLASSROOM_DOC_MAX_BYTES)})` },
       { status: 413 }
     )
   }

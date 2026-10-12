@@ -73,8 +73,17 @@ export function isAclError(
   return 'error' in v
 }
 
-export const CLASSROOM_ASSIGNMENT_MAX_BYTES = 500 * 1024 * 1024 // 500MB
-export const CLASSROOM_DOC_MAX_BYTES = 500 * 1024 * 1024
+export const CLASSROOM_ASSIGNMENT_MAX_BYTES = 4 * 1024 * 1024 * 1024 // 4GB
+export const CLASSROOM_DOC_MAX_BYTES = 4 * 1024 * 1024 * 1024
+
+/** Human label for upload caps (e.g. "4GB", "100MB"). */
+export function formatUploadLimit(bytes: number): string {
+  const gb = bytes / (1024 * 1024 * 1024)
+  if (gb >= 1) {
+    return Number.isInteger(gb) ? `${gb}GB` : `${parseFloat(gb.toFixed(1))}GB`
+  }
+  return `${Math.round(bytes / (1024 * 1024))}MB`
+}
 
 export function classroomR2Key(
   classroomId: string,

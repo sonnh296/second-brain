@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Paperclip } from 'lucide-react'
 import { putToR2WithProgress } from '@/lib/upload/put-with-progress'
-import { CLASSROOM_ASSIGNMENT_MAX_BYTES } from '@/lib/classroom/acl'
+import { CLASSROOM_ASSIGNMENT_MAX_BYTES, formatUploadLimit } from '@/lib/classroom/acl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -313,9 +313,7 @@ export default function AssignmentDetailPage() {
   async function uploadSubmission(file: File) {
     setMsg(null)
     if (file.size > CLASSROOM_ASSIGNMENT_MAX_BYTES) {
-      setMsg(
-        `File quá lớn (tối đa ${Math.round(CLASSROOM_ASSIGNMENT_MAX_BYTES / 1024 / 1024)}MB)`
-      )
+      setMsg(`File quá lớn (tối đa ${formatUploadLimit(CLASSROOM_ASSIGNMENT_MAX_BYTES)})`)
       return
     }
     setProgress(0)
@@ -906,7 +904,7 @@ export default function AssignmentDetailPage() {
                 <p className="text-xs text-muted-foreground">
                   {(submission?.files ?? []).length > 0
                     ? 'File mới sẽ thay thế file hiện tại. Có thể xóa file cũ bằng nút Xóa phía trên.'
-                    : `Đính kèm bài làm (tối đa ${Math.round(CLASSROOM_ASSIGNMENT_MAX_BYTES / 1024 / 1024)}MB).`}
+                    : `Đính kèm bài làm (tối đa ${formatUploadLimit(CLASSROOM_ASSIGNMENT_MAX_BYTES)}).`}
                 </p>
               </div>
             )}

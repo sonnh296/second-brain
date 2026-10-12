@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/db/server'
 import {
   CLASSROOM_DOC_MAX_BYTES,
+  formatUploadLimit,
   classroomR2Key,
   isAclError,
   requireMember,
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   }
   if (size > CLASSROOM_DOC_MAX_BYTES) {
     return NextResponse.json(
-      { error: `File too large (max ${Math.round(CLASSROOM_DOC_MAX_BYTES / 1024 / 1024)}MB)` },
+      { error: `File too large (max ${formatUploadLimit(CLASSROOM_DOC_MAX_BYTES)})` },
       { status: 413 }
     )
   }
