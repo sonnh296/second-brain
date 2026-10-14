@@ -27,6 +27,13 @@ function isStoredFileKey(r2Key: string): boolean {
   return r2Key !== 'pending' && r2Key !== 'note' && !r2Key.startsWith('notes/')
 }
 
+/** Keys outside the personal `documents` table — never treat as R2 orphans. */
+const PROTECTED_R2_PREFIXES = ['classroom/', 'avatars/', 'chat/', 'notes/'] as const
+
+function isProtectedR2Key(key: string): boolean {
+  return PROTECTED_R2_PREFIXES.some((prefix) => key.startsWith(prefix))
+}
+
 function isActiveReplacement(startedAt: string | null): boolean {
   if (!startedAt) return false
   return Date.now() - new Date(startedAt).getTime() < 24 * 60 * 60 * 1000
@@ -100,8 +107,30 @@ async function main() {
     ([document_id, chunk_count]) => ({ document_id, chunk_count })
   )
 
+  // Also keep classroom document + assignment submission objects (not in `documents`).
+  if (!userFilter) {
+    const { data: classroomDocs } = await supabase
+      .from('classroom_documents')
+      .select('r2_key')
+    for (const row of classroomDocs ?? []) {
+      if (row.r2_key && isStoredFileKey(row.r2_key)) validR2Keys.add(row.r2_key)
+    }
+
+    const { data: submissions } = await supabase
+      .from('assignment_submissions')
+      .select('files')
+    for (const row of submissions ?? []) {
+      const files = (row.files as { r2_key?: string }[] | null) ?? []
+      for (const file of files) {
+        if (file.r2_key && isStoredFileKey(file.r2_key)) validR2Keys.add(file.r2_key)
+      }
+    }
+  }
+
   const r2Keys = await listObjectKeys(userFilter ? `${userFilter}/` : undefined)
-  const r2Orphans = r2Keys.filter((key) => !validR2Keys.has(key))
+  const r2Orphans = r2Keys.filter(
+    (key) => !validR2Keys.has(key) && !isProtectedR2Key(key)
+  )
 
   const report: OrphanReport = {
     qdrant_orphans: qdrantOrphans,
