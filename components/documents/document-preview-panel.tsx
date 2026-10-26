@@ -6,7 +6,6 @@ import { Download, ExternalLink, Pencil, Upload, X, ZoomIn, ZoomOut, RotateCcw }
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
 import { MarkdownContent } from '@/components/markdown-content'
 import { StatusBadge } from '@/components/documents/document-grid'
@@ -1001,17 +1000,22 @@ export function DescriptionPanel({
           hideSaveButton
         />
 
-        <div>
+        <div className="flex flex-col gap-1.5 min-h-0">
           <Label className="text-xs text-muted-foreground">Mô tả tài liệu</Label>
-          <Textarea
+          <RichTextEditor
             value={editDescription}
-            onChange={(e) => onEditDescription(e.target.value)}
+            onChange={onEditDescription}
             placeholder="Ghi chú, tóm tắt hoặc mô tả chi tiết để dễ tìm lại sau..."
-            rows={12}
-            maxLength={MAX_DOCUMENT_DESCRIPTION_LENGTH}
-            className="mt-1.5 min-h-[180px] max-h-[min(45vh,360px)] resize-y text-sm leading-relaxed overflow-y-auto"
+            disabled={savingDescription}
+            minHeightClass="min-h-[180px] max-h-[min(45vh,360px)]"
+            className="mt-0"
           />
-          <p className="text-[11px] text-muted-foreground mt-1.5">
+          <p
+            className={cn(
+              'text-[11px] text-muted-foreground',
+              editDescription.length > MAX_DOCUMENT_DESCRIPTION_LENGTH && 'text-destructive'
+            )}
+          >
             {editDescription.length.toLocaleString('vi-VN')} /{' '}
             {MAX_DOCUMENT_DESCRIPTION_LENGTH.toLocaleString('vi-VN')} ký tự
           </p>
@@ -1040,7 +1044,11 @@ export function DescriptionPanel({
               'bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground opacity-70'
           )}
           onClick={() => void onSaveDescription()}
-          disabled={savingDescription || !descriptionDirty}
+          disabled={
+            savingDescription ||
+            !descriptionDirty ||
+            editDescription.length > MAX_DOCUMENT_DESCRIPTION_LENGTH
+          }
         >
           {savingDescription ? 'Đang lưu...' : 'Lưu mô tả'}
         </Button>

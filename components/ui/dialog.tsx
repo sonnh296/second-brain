@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
@@ -22,11 +23,14 @@ export function Dialog({
   onClose,
   maxWidth = 'max-w-md',
 }: DialogProps) {
-  if (!open) return null
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
-  return (
+  if (!open || !mounted) return null
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="dialog-title"
@@ -52,6 +56,7 @@ export function Dialog({
           <CardFooter className="justify-end gap-2 shrink-0 border-t pt-3">{footer}</CardFooter>
         )}
       </Card>
-    </div>
+    </div>,
+    document.body
   )
 }

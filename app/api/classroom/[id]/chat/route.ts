@@ -222,14 +222,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     async onFinish({ text, usage, steps }) {
       let { content, citedSources } = parseCitationsFromResponse(text, sources)
 
-      // If model listed lesson files but forgot CITATIONS, attach focused docs.
+      // Only attach focused docs the answer actually names — never invent the whole set.
       if (citedSources.length === 0 && focusedDocs.length > 0) {
         const lower = content.toLowerCase()
-        const mentioned = focusedDocs.filter((d) =>
-          lower.includes(d.filename.toLowerCase())
+        const mentioned = focusedDocs.filter(
+          (d) => d.filename.length >= 3 && lower.includes(d.filename.toLowerCase())
         )
-        const docsToCite = mentioned.length > 0 ? mentioned : focusedDocs
-        citedSources = docsToCite.map((d) => ({
+        citedSources = mentioned.map((d) => ({
           filename: d.filename,
           chunk_index: 0,
           document_id: d.id,

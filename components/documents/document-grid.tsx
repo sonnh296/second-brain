@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { TagBadge } from '@/components/documents/tag-manager'
 import { isImageType } from '@/lib/upload/file-types'
+import { markdownToPlainText } from '@/lib/notes/markdown-plain'
 import { useLongPressSelect } from '@/hooks/use-long-press-select'
 import type { Document } from '@/lib/db/types'
 
@@ -181,7 +182,9 @@ export function DriveGridItem({
         />
         <p className="text-xs font-medium line-clamp-2 w-full leading-snug">{doc.filename}</p>
         {doc.description && (
-          <p className="text-[10px] text-muted-foreground line-clamp-1 w-full">{doc.description}</p>
+          <p className="text-[10px] text-muted-foreground line-clamp-1 w-full">
+            {markdownToPlainText(doc.description)}
+          </p>
         )}
         {doc.tags && doc.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 justify-center w-full">
@@ -309,7 +312,9 @@ export function DriveListItem({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{doc.filename}</p>
         {doc.description && (
-          <p className="text-xs text-muted-foreground truncate">{doc.description}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {markdownToPlainText(doc.description)}
+          </p>
         )}
         {doc.tags && doc.tags.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-0.5">

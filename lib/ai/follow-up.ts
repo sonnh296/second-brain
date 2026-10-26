@@ -197,7 +197,8 @@ function looksLikeWeakStandalone(message: string): boolean {
 
 /**
  * Soft citation fallback when the model used retrieved sources but omitted CITATIONS.
- * Prefer sources whose filename appears in the answer; else top-scoring unique files.
+ * Only cite files whose filename appears in the answer — never invent from retrieval score.
+ * (Score-based invent caused wrong badges: e.g. answer about a video, badges showed unrelated images.)
  */
 export function fallbackCitationsFromSources(
   answerContent: string,
@@ -216,16 +217,12 @@ export function fallbackCitationsFromSources(
 
   const lower = answerContent.toLowerCase()
   const mentioned = availableSources.filter((s) =>
-    lower.includes(s.filename.toLowerCase())
-  )
-
-  const pool = mentioned.length > 0 ? mentioned : [...availableSources].sort(
-    (a, b) => (b.score ?? 0) - (a.score ?? 0)
+    s.filename.length >= 3 && lower.includes(s.filename.toLowerCase())
   )
 
   const seen = new Set<string>()
   const out: CitedSource[] = []
-  for (const s of pool) {
+  for (const s of mentioned) {
     const key = s.document_id || s.filename
     if (seen.has(key)) continue
     seen.add(key)

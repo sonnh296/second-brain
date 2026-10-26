@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 
@@ -37,11 +38,16 @@ export function ConfirmDialog({
   onCancel: () => void
   onDiscard?: () => void
 }) {
-  if (!open) return null
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
-  return (
+  if (!open || !mounted) return null
+
+  // Portal to body: header uses backdrop-blur which makes `position: fixed`
+  // descendants relative to the header — leaving a broken strip at the top.
+  return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
@@ -84,7 +90,8 @@ export function ConfirmDialog({
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </div>,
+    document.body
   )
 }
 

@@ -16,7 +16,12 @@ import {
   resolveDisplayFilename,
 } from '@/lib/ai/prompt'
 import { isGreeting, isDocumentInventoryQuery, isDocumentManagementQuery } from '@/lib/ai/query-intent'
-import { parseCitationsFromResponse } from '@/lib/ai/citations'
+import {
+  parseCitationsFromResponse,
+  extractFilenamesFromText,
+  citationsFromLibraryDocs,
+  dedupeCitedSourcesByFile,
+} from '@/lib/ai/citations'
 import {
   resolveFollowUpRetrieval,
   fallbackCitationsFromSources,
@@ -28,6 +33,7 @@ import { filterRelevantChunks } from '@/lib/search/relevance-filter'
 import {
   searchDocumentInventory,
   listUserDocumentCatalog,
+  findDocumentsByFilenames,
 } from '@/lib/search/document-inventory'
 import { resolveDocumentScope } from '@/lib/search/scope-documents'
 import { isDefaultSessionTitle, generateSessionTitle } from '@/lib/ai/session-title'
@@ -455,11 +461,38 @@ export async function POST(req: NextRequest) {
             ? 'Đã tạo đề xuất. Vui lòng bấm **Xác nhận** trong thẻ bên dưới để áp dụng.'
             : '')
         let { content, citedSources } = parseCitationsFromResponse(rawText, sources)
+        const hadModelCitations = citedSources.length > 0
 
-        // Soft fallback: model used RAG context but forgot / emptied CITATIONS.
-        if (citedSources.length === 0 && sources.length > 0 && usedKnowledge) {
-          citedSources = fallbackCitationsFromSources(content, sources, { maxFiles: 3 })
+        // When the model omitted CITATIONS: mention-only fallback (never invent from score),
+        // then resolve any named library files missing from the retrieval pool (e.g. video).
+        if (!hadModelCitations) {
+          if (sources.length > 0 && usedKnowledge) {
+            citedSources = fallbackCitationsFromSources(content, sources, { maxFiles: 3 })
+          }
+
+          if (mode === 'knowledge' && !conversational && !documentManagement) {
+            const mentionedNames = extractFilenamesFromText(content)
+            if (mentionedNames.length > 0) {
+              const libraryDocs = await findDocumentsByFilenames(
+                supabase,
+                corpusUserId,
+                mentionedNames,
+                scopeDocumentIds ? { documentIds: scopeDocumentIds } : undefined
+              )
+              if (libraryDocs.length > 0) {
+                const fromLibrary = citationsFromLibraryDocs(content, libraryDocs, {
+                  maxFiles: 3,
+                })
+                citedSources = dedupeCitedSourcesByFile([
+                  ...citedSources,
+                  ...fromLibrary,
+                ])
+              }
+            }
+          }
         }
+
+        citedSources = dedupeCitedSourcesByFile(citedSources)
 
         const chatTokens = fromAiSdkSteps(steps, usage)
         await logUsage({

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { dedupeCitedSourcesByFile, parseCitationsFromResponse } from './citations'
+import {
+  citationsFromLibraryDocs,
+  dedupeCitedSourcesByFile,
+  extractFilenamesFromText,
+  parseCitationsFromResponse,
+} from './citations'
 
 const sources = [
   {
@@ -121,6 +126,35 @@ describe('dedupeCitedSourcesByFile', () => {
     ).toEqual([
       { filename: 'a.docx', chunk_index: 0, document_id: 'd1', file_type: 'docx' },
       { filename: 'b.pdf', chunk_index: 1, document_id: 'd2', file_type: 'pdf', page: 2 },
+    ])
+  })
+})
+
+describe('extractFilenamesFromText', () => {
+  it('extracts video filenames from prose without swallowing surrounding words', () => {
+    const text =
+      'Mình tìm thấy video `01092026lehieulan5.mp4` trong kho. Không liên quan ảnh khác.'
+    expect(extractFilenamesFromText(text)).toEqual(['01092026lehieulan5.mp4'])
+  })
+})
+
+describe('citationsFromLibraryDocs', () => {
+  it('cites the video named in the answer, not unrelated retrieval noise', () => {
+    const cites = citationsFromLibraryDocs(
+      'Mình tìm thấy file 01092026lehieulan5.mp4 trong kho lưu trữ.',
+      [
+        { id: 'img-1', filename: 'Weixin Image_202608291.png', file_type: 'png' },
+        { id: 'vid-1', filename: '01092026lehieulan5.mp4', file_type: 'mp4' },
+        { id: 'pdf-1', filename: 'Giải thích Modbus Memory.pdf', file_type: 'pdf' },
+      ]
+    )
+    expect(cites).toEqual([
+      {
+        filename: '01092026lehieulan5.mp4',
+        chunk_index: 0,
+        document_id: 'vid-1',
+        file_type: 'mp4',
+      },
     ])
   })
 })

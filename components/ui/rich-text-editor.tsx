@@ -23,6 +23,8 @@ import {
   ImagePlus,
   Minus,
   Loader2,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { NoteImageKind } from '@/lib/notes/images'
@@ -168,6 +170,27 @@ function removeImageBySrc(editor: Editor, src: string) {
   })
 }
 
+/**
+ * Insert an image without replacing a selected image node.
+ * TipTap's setImage → insertContent replaces selection.from..to, so a NodeSelection
+ * on the previous image would wipe it when adding another.
+ */
+function insertImageNode(editor: Editor, attrs: { src: string; alt: string }) {
+  // Always insert at a point (from === to). TipTap setImage → insertContent uses
+  // selection.from..to, so a NodeSelection on the previous image would replace it.
+  // selection.to is after a selected image node (or at the caret).
+  const insertPos = editor.state.selection.to
+
+  return editor
+    .chain()
+    .focus()
+    .insertContentAt(insertPos, [
+      { type: 'image', attrs },
+      { type: 'paragraph' },
+    ])
+    .run()
+}
+
 export function RichTextEditor({
   value,
   onChange,
@@ -216,12 +239,14 @@ export function RichTextEditor({
 
     const alt = file.name.replace(/\.[^.]+$/, '') || 'image'
     const blobUrl = URL.createObjectURL(file)
-    ed.chain().focus().setImage({ src: blobUrl, alt }).run()
+    insertImageNode(ed, { src: blobUrl, alt })
 
     try {
       const src = await uploadNoteImage(file, scope)
       if (!replaceImageSrc(ed, blobUrl, src)) {
-        ed.chain().focus().setImage({ src, alt }).run()
+        // Blob placeholder missing (e.g. external content sync) — append, don't setImage
+        // (setImage would replace a selected prior image).
+        insertImageNode(ed, { src, alt })
       }
     } catch (err) {
       removeImageBySrc(ed, blobUrl)
@@ -367,6 +392,21 @@ export function RichTextEditor({
       )}
     >
       <div className="shrink-0 sticky top-0 z-10 flex flex-wrap items-center gap-0.5 border-b bg-muted/40 backdrop-blur-sm px-1.5 py-1">
+        <ToolbarButton
+          label="Hoàn tác (⌘Z)"
+          disabled={controlsDisabled || !editor.can().undo()}
+          onClick={() => editor.chain().focus().undo().run()}
+        >
+          <Undo2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Làm lại (⌘⇧Z)"
+          disabled={controlsDisabled || !editor.can().redo()}
+          onClick={() => editor.chain().focus().redo().run()}
+        >
+          <Redo2 className="h-3.5 w-3.5" />
+        </ToolbarButton>
+        <div className="mx-1 h-4 w-px bg-border" />
         <ToolbarButton
           label="Tiêu đề 2"
           active={editor.isActive('heading', { level: 2 })}

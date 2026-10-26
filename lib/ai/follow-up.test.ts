@@ -100,10 +100,10 @@ describe('fallbackCitationsFromSources', () => {
     expect(cites[0].document_id).toBe('a')
   })
 
-  it('falls back to top scores when no filename mentioned', () => {
+  it('does not invent citations from retrieval score when no filename is mentioned', () => {
     const cites = fallbackCitationsFromSources('Thời gian học là chiều thứ 2.', sources, {
       maxFiles: 1,
     })
-    expect(cites[0].document_id).toBe('a')
+    expect(cites).toEqual([])
   })
 })

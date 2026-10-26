@@ -507,8 +507,8 @@ export default function AssignmentDetailPage() {
           )}
         />
         <textarea
-          className="w-full rounded-lg border px-3 py-2 text-sm disabled:opacity-60"
-          rows={2}
+          className="w-full min-h-[140px] max-h-[320px] resize-y overflow-y-auto rounded-lg border px-3 py-2.5 text-sm leading-relaxed disabled:opacity-60"
+          rows={6}
           placeholder="Nhận xét điểm"
           value={gradeComment}
           disabled={gradeInputsLocked}

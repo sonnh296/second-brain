@@ -85,6 +85,73 @@ export async function searchDocumentInventory(
   }))
 }
 
+/** Escape `%` / `_` so ilike performs a case-insensitive exact match. */
+function escapeIlikeExact(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+/**
+ * Resolve library documents by filenames mentioned in an answer.
+ * Case-insensitive; includes all file types (pdf, image, video, …).
+ */
+export async function findDocumentsByFilenames(
+  supabase: SupabaseClient,
+  userId: string,
+  filenames: string[],
+  options: { documentIds?: string[] } = {}
+): Promise<{ id: string; filename: string; file_type: string }[]> {
+  const unique = [
+    ...new Map(filenames.map((n) => [n.toLowerCase(), n])).values(),
+  ].slice(0, 8)
+  if (unique.length === 0) return []
+  if (options.documentIds && options.documentIds.length === 0) return []
+
+  const found: { id: string; filename: string; file_type: string }[] = []
+  const seenIds = new Set<string>()
+
+  for (const name of unique) {
+    const pattern = escapeIlikeExact(name)
+    let q = supabase
+      .from('documents')
+      .select('id, filename, file_type')
+      .eq('user_id', userId)
+      .is('deleted_at', null)
+      .ilike('filename', pattern)
+      .limit(3)
+    if (options.documentIds && options.documentIds.length > 0) {
+      q = q.in('id', options.documentIds)
+    }
+    let { data, error } = await q
+
+    if (error && (error.code === '42703' || error.message?.includes('deleted_at'))) {
+      let fallback = supabase
+        .from('documents')
+        .select('id, filename, file_type')
+        .eq('user_id', userId)
+        .ilike('filename', pattern)
+        .limit(3)
+      if (options.documentIds && options.documentIds.length > 0) {
+        fallback = fallback.in('id', options.documentIds)
+      }
+      ;({ data } = await fallback)
+    }
+
+    for (const row of data ?? []) {
+      if (seenIds.has(row.id)) continue
+      // Guard: ilike escape support varies — require exact case-insensitive equality.
+      if ((row.filename as string).toLowerCase() !== name.toLowerCase()) continue
+      seenIds.add(row.id)
+      found.push({
+        id: row.id as string,
+        filename: row.filename as string,
+        file_type: row.file_type as string,
+      })
+    }
+  }
+
+  return found
+}
+
 /** Short catalog injected when inventory query finds nothing by keyword. */
 export async function listUserDocumentCatalog(
   supabase: SupabaseClient,
